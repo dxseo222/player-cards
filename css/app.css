@@ -269,3 +269,27 @@ legend { font-family: var(--head); font-weight: 700; font-size: 18px; margin-bot
   .trait-row { grid-template-columns: 90px 1fr 24px; }
   .who { margin-left: 0; width: 100%; }
 }
+
+/* ---------- hidden cards, share page, image export ---------- */
+.hidden-card {
+  width: 236px;
+  min-height: 380px;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: repeating-linear-gradient(135deg, transparent 0 12px, rgba(255, 255, 255, .02) 12px 24px);
+}
+.hidden-card b { font-family: var(--head); font-size: 20px; color: var(--fg-2); }
+.share { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 32px; align-items: start; }
+.share .stack { max-width: 520px; }
+.btn.small { padding: 5px 10px; font-size: 12px; }
+@media (max-width: 900px) { .share { grid-template-columns: 1fr; justify-items: center; } }
+.png-stage { position: fixed; left: -10000px; top: 0; }
+.pc.pc-export { --pc-w: 832px; width: 832px; padding: 24px; perspective: none; background: #0b090a; }
+.pc-export .pc-inner { display: flex; gap: 24px; transform: none; transform-style: flat; }
+.pc-export .pc-face { width: 380px; transform: none; backface-visibility: visible; -webkit-backface-visibility: visible; }
+.pc-export, .pc-export * { animation: none !important; transition: none !important; }

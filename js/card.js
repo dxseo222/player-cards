@@ -170,9 +170,11 @@ function applyColors(card, colors) {
   }
 }
 
+// "Original 1/2", "Copy #3", and from version 2 on "v2 · Original 1/2".
 export function editionLabel(item) {
   if (!item) return '';
-  return item.edition === 'original' ? 'Original ' + item.serial + '/2' : 'Copy #' + item.serial;
+  const ed = item.edition === 'original' ? 'Original ' + item.serial + '/2' : 'Copy #' + item.serial;
+  return item.version > 1 ? 'v' + item.version + ' · ' + ed : ed;
 }
 
 function h(tag, cls, text) {

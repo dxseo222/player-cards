@@ -1,12 +1,14 @@
 // Demo backend: same interface as api-supabase.js, but everything lives in this browser's
 // localStorage. Used automatically when config.js has no Supabase keys, so the whole app
-// (cards, originals/copies, trades) can be tried locally before setting anything up.
+// (cards, versions, originals/copies, trades, moderation) can be tried locally.
+// The rules here mirror supabase/*.sql.
 
-import { blankCard } from './card.js?v8';
+import { blankCard } from './card.js?v9';
 
-const KEY = 'player-cards-demo-v1';
+const KEY = 'player-cards-demo-v2';
 let memory = null;
 const listeners = new Set();
+const tradeListeners = new Set();
 
 function uid() { return (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()) + Math.random().toString(16).slice(2); }
 
@@ -20,19 +22,24 @@ function sampleCard(name, theme, cls, emblem) {
   });
 }
 
+function newCard(s, userId, data) {
+  const c = { id: uid(), creator_id: userId, data, current_version: 1, hidden: false };
+  const v = { id: uid(), card_id: c.id, version: 1, data, original2_given: false, copies_minted: 0, created_at: new Date().toISOString() };
+  s.cards.push(c);
+  s.versions.push(v);
+  s.items.push({ id: uid(), card_id: c.id, version_id: v.id, owner_id: userId, edition: 'original', serial: 1 });
+  return c;
+}
+
 function seed() {
-  const s = { users: [], cards: [], items: [], trades: [], current: null };
-  const add = (username, card) => {
-    const u = { id: uid(), username, avatar_url: null };
+  const s = { users: [], cards: [], versions: [], items: [], trades: [], reports: [], current: null };
+  const add = (username, card, admin = false) => {
+    const u = { id: uid(), username, avatar_url: null, is_admin: admin };
     s.users.push(u);
-    if (card) {
-      const c = { id: uid(), creator_id: u.id, data: card, original2_given: false, copies_minted: 0 };
-      s.cards.push(c);
-      s.items.push({ id: uid(), card_id: c.id, owner_id: u.id, edition: 'original', serial: 1 });
-    }
+    if (card) newCard(s, u.id, card);
     return u;
   };
-  const me = add('you (demo)', null);
+  const me = add('you (demo)', null, true);
   add('Sample Player A', sampleCard('sample a', 'lilac', 'Grinder · Gamer', '🎮'));
   add('Sample Player B', sampleCard('sample b', 'mono', 'Artificer · Dev', '⌨️'));
   s.current = me.id;
@@ -48,15 +55,18 @@ function load() {
 function save() { try { localStorage.setItem(KEY, JSON.stringify(memory)); } catch { /* keep in memory */ } }
 function fail(msg) { throw new Error(msg); }
 const clone = (x) => JSON.parse(JSON.stringify(x));
+const curVersion = (s, c) => s.versions.find((v) => v.card_id === c.id && v.version === c.current_version);
+const withCur = (s, c) => c && { ...clone(c), cur: clone(curVersion(s, c)), versionCount: s.versions.filter((v) => v.card_id === c.id).length };
+const me = (s) => s.users.find((u) => u.id === s.current);
 
-function mint(s, cardId, ownerId) {
-  const c = s.cards.find((x) => x.id === cardId);
-  if (!c.original2_given) {
-    c.original2_given = true;
-    s.items.push({ id: uid(), card_id: c.id, owner_id: ownerId, edition: 'original', serial: 2 });
+function mint(s, card, ownerId) {
+  const v = curVersion(s, card);
+  if (!v.original2_given) {
+    v.original2_given = true;
+    s.items.push({ id: uid(), card_id: card.id, version_id: v.id, owner_id: ownerId, edition: 'original', serial: 2 });
   } else {
-    c.copies_minted += 1;
-    s.items.push({ id: uid(), card_id: c.id, owner_id: ownerId, edition: 'copy', serial: c.copies_minted });
+    v.copies_minted += 1;
+    s.items.push({ id: uid(), card_id: card.id, version_id: v.id, owner_id: ownerId, edition: 'copy', serial: v.copies_minted });
   }
 }
 function checkItems(s, ids, owner) {
@@ -64,6 +74,8 @@ function checkItems(s, ids, owner) {
   const ok = s.items.filter((i) => ids.includes(i.id) && i.owner_id === owner && !(i.edition === 'original' && i.serial === 1));
   if (ok.length !== ids.length) fail('One of those cards is not available to trade anymore');
 }
+function requireAdmin(s) { if (!me(s).is_admin) fail('Only moderators can do that'); }
+function tradeEvent(t, type) { tradeListeners.forEach((cb) => cb(clone(t), type)); }
 
 export const api = {
   mode: 'demo',
@@ -77,22 +89,36 @@ export const api = {
   async switchUser(id) { const s = load(); s.current = id; save(); this.emit(); },
   async resetDemo() { memory = seed(); save(); this.emit(); },
 
-  async me() { const s = load(); return clone(s.users.find((u) => u.id === s.current)); },
+  async me() { return clone(me(load())); },
   async players() {
     const s = load();
-    return s.users.map((u) => ({ ...clone(u), card: clone(s.cards.find((c) => c.creator_id === u.id) || null) }));
+    return s.users.map((u) => ({ ...clone(u), card: withCur(s, s.cards.find((c) => c.creator_id === u.id)) || null }));
   },
-  async myCard() { const s = load(); return clone(s.cards.find((c) => c.creator_id === s.current) || null); },
+  async myCard() { const s = load(); return withCur(s, s.cards.find((c) => c.creator_id === s.current)) || null; },
   async saveCard(data) {
     const s = load();
     let c = s.cards.find((x) => x.creator_id === s.current);
-    if (!c) {
-      c = { id: uid(), creator_id: s.current, data, original2_given: false, copies_minted: 0 };
-      s.cards.push(c);
-      s.items.push({ id: uid(), card_id: c.id, owner_id: s.current, edition: 'original', serial: 1 });
-    } else c.data = data;
+    if (!c) { c = newCard(s, s.current, data); save(); return c.id; }
+    const v = curVersion(s, c);
+    if (JSON.stringify(v.data) === JSON.stringify(data)) return c.id;
+    if (v.original2_given || v.copies_minted > 0) {
+      const next = Math.max(...s.versions.filter((x) => x.card_id === c.id).map((x) => x.version)) + 1;
+      const nv = { id: uid(), card_id: c.id, version: next, data, original2_given: false, copies_minted: 0, created_at: new Date().toISOString() };
+      s.versions.push(nv);
+      s.items.push({ id: uid(), card_id: c.id, version_id: nv.id, owner_id: s.current, edition: 'original', serial: 1 });
+      c.current_version = next;
+    } else v.data = data;
+    c.data = data;
     save();
     return c.id;
+  },
+  async versions(ids) { return clone(load().versions.filter((v) => ids.includes(v.id))); },
+  async publicCard(cardId, version) {
+    const s = load();
+    const c = s.cards.find((x) => x.id === cardId);
+    if (!c || c.hidden) return null;
+    const v = s.versions.find((x) => x.card_id === c.id && x.version === (version || c.current_version));
+    return v ? { card: clone(c), version: clone(v) } : null;
   },
   // Demo mode keeps the (already shrunk) picture inside the card as a data URL.
   async uploadPortrait(blob) {
@@ -113,19 +139,21 @@ export const api = {
   },
   async propose({ to, offerItems = [], offerMint = false, requestItems = [], requestMint = false, message = '' }) {
     const s = load();
-    const me = s.current;
-    if (to === me) fail('You cannot trade with yourself');
+    const meId = s.current;
+    if (to === meId) fail('You cannot trade with yourself');
     if (!offerItems.length && !requestItems.length && !offerMint && !requestMint) fail('Add at least one card to the trade');
-    checkItems(s, offerItems, me);
+    checkItems(s, offerItems, meId);
     checkItems(s, requestItems, to);
-    if (offerMint && !s.cards.some((c) => c.creator_id === me)) fail('Make your card before trading it');
-    if (requestMint && !s.cards.some((c) => c.creator_id === to)) fail('That player has not made a card yet');
-    s.trades.push({
-      id: uid(), from_user: me, to_user: to, offer_items: offerItems, offer_mint: offerMint,
+    if (offerMint && !s.cards.some((c) => c.creator_id === meId && !c.hidden)) fail('Make your card before trading it (or it is hidden by a moderator)');
+    if (requestMint && !s.cards.some((c) => c.creator_id === to && !c.hidden)) fail('That player has no card to trade yet');
+    const t = {
+      id: uid(), from_user: meId, to_user: to, offer_items: offerItems, offer_mint: offerMint,
       request_items: requestItems, request_mint: requestMint, message: message.slice(0, 280) || null,
       status: 'pending', created_at: new Date().toISOString(), resolved_at: null,
-    });
+    };
+    s.trades.push(t);
     save();
+    tradeEvent(t, 'INSERT');
   },
   async respond(id, accept) {
     const s = load();
@@ -133,16 +161,17 @@ export const api = {
     if (!t || t.to_user !== s.current) fail('Trade not found');
     if (t.status !== 'pending') fail('This trade is already ' + t.status);
     t.resolved_at = new Date().toISOString();
-    if (!accept) { t.status = 'declined'; save(); return 'declined'; }
-    try { checkItems(s, t.offer_items, t.from_user); checkItems(s, t.request_items, t.to_user); } catch { t.status = 'failed'; save(); return 'failed'; }
+    if (!accept) { t.status = 'declined'; save(); tradeEvent(t, 'UPDATE'); return 'declined'; }
+    try { checkItems(s, t.offer_items, t.from_user); checkItems(s, t.request_items, t.to_user); } catch { t.status = 'failed'; save(); tradeEvent(t, 'UPDATE'); return 'failed'; }
     s.items.forEach((i) => {
       if (t.offer_items.includes(i.id)) i.owner_id = t.to_user;
       else if (t.request_items.includes(i.id)) i.owner_id = t.from_user;
     });
-    if (t.offer_mint) mint(s, s.cards.find((c) => c.creator_id === t.from_user).id, t.to_user);
-    if (t.request_mint) mint(s, s.cards.find((c) => c.creator_id === t.to_user).id, t.from_user);
+    if (t.offer_mint) mint(s, s.cards.find((c) => c.creator_id === t.from_user), t.to_user);
+    if (t.request_mint) mint(s, s.cards.find((c) => c.creator_id === t.to_user), t.from_user);
     t.status = 'accepted';
     save();
+    tradeEvent(t, 'UPDATE');
     return 'accepted';
   },
   async cancel(id) {
@@ -152,5 +181,26 @@ export const api = {
     t.status = 'cancelled';
     t.resolved_at = new Date().toISOString();
     save();
+    tradeEvent(t, 'UPDATE');
   },
+  // In demo mode every "player" is in this browser, so events are delivered directly.
+  onTrades(cb) { tradeListeners.clear(); tradeListeners.add(cb); },
+
+  // ---------- moderation (the demo player is a moderator) ----------
+  async report(cardId, reason) {
+    const s = load();
+    if (s.reports.some((r) => r.card_id === cardId && r.reporter === s.current && r.status === 'open')) return;
+    s.reports.push({ id: uid(), card_id: cardId, reporter: s.current, reason: (reason || '').slice(0, 280) || null, status: 'open', created_at: new Date().toISOString() });
+    save();
+  },
+  async reports() { const s = load(); requireAdmin(s); return clone(s.reports).reverse(); },
+  async adminSetHidden(cardId, hidden) { const s = load(); requireAdmin(s); s.cards.find((c) => c.id === cardId).hidden = hidden; save(); },
+  async adminRemovePortrait(card) {
+    const s = load(); requireAdmin(s);
+    const c = s.cards.find((x) => x.id === card.id);
+    delete c.data.portraitUrl;
+    s.versions.filter((v) => v.card_id === c.id).forEach((v) => { delete v.data.portraitUrl; });
+    save();
+  },
+  async adminResolve(reportId) { const s = load(); requireAdmin(s); s.reports.find((r) => r.id === reportId).status = 'resolved'; save(); },
 };
