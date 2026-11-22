@@ -3,7 +3,7 @@
 // (cards, versions, originals/copies, trades, moderation) can be tried locally.
 // The rules here mirror supabase/*.sql.
 
-import { blankCard } from './card.js?v9';
+import { blankCard } from './card.js?v10';
 
 const KEY = 'player-cards-demo-v2';
 let memory = null;
@@ -50,6 +50,7 @@ function load() {
   if (memory) return memory;
   try { const raw = localStorage.getItem(KEY); if (raw) memory = JSON.parse(raw); } catch { /* storage blocked */ }
   if (!memory) { memory = seed(); save(); }
+  memory.wishlist = memory.wishlist || [];
   return memory;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(memory)); } catch { /* keep in memory */ } }
@@ -182,6 +183,31 @@ export const api = {
     t.resolved_at = new Date().toISOString();
     save();
     tradeEvent(t, 'UPDATE');
+  },
+  async counter(tradeId, payload) {
+    const s = load();
+    const t = s.trades.find((x) => x.id === tradeId);
+    if (!t || t.to_user !== s.current) fail('Trade not found');
+    if (t.status !== 'pending') fail('This trade is already ' + t.status);
+    await this.propose({ ...payload, to: t.from_user });
+    s.trades[s.trades.length - 1].counter_of = t.id;
+    t.status = 'countered';
+    t.resolved_at = new Date().toISOString();
+    save();
+    tradeEvent(t, 'UPDATE');
+  },
+  async wishlist() { return clone(load().wishlist); },
+  async setWish(cardId, on) {
+    const s = load();
+    const c = s.cards.find((x) => x.id === cardId);
+    if (c && c.creator_id === s.current) fail('You can’t wish for your own card');
+    s.wishlist = s.wishlist.filter((w) => !(w.user_id === s.current && w.card_id === cardId));
+    if (on) s.wishlist.push({ user_id: s.current, card_id: cardId, created_at: new Date().toISOString() });
+    save();
+  },
+  async allItems() { return clone(load().items); },
+  async allVersions() {
+    return load().versions.map((v) => ({ id: v.id, card_id: v.card_id, version: v.version, original2_given: v.original2_given, copies_minted: v.copies_minted, msgCount: v.data.msgCount || 0 }));
   },
   // In demo mode every "player" is in this browser, so events are delivered directly.
   onTrades(cb) { tradeListeners.clear(); tradeListeners.add(cb); },

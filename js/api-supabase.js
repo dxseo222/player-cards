@@ -2,7 +2,7 @@
 // supabase/*.sql, so they can't be bypassed from the browser.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v9';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v10';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const listeners = new Set();
@@ -13,6 +13,9 @@ function check({ data, error }) {
   if (error) {
     if (/card_versions|current_version|is_admin|report_card/.test(error.message || '')) {
       throw new Error('The database needs an update. Run supabase/003_versions_moderation.sql in Supabase.');
+    }
+    if (/wishlist|counter_trade|counter_of/.test(error.message || '')) {
+      throw new Error('The database needs an update. Run supabase/005_counters_wishlist.sql in Supabase.');
     }
     throw new Error(error.message || 'Something went wrong talking to the server');
   }
@@ -123,6 +126,25 @@ export const api = {
     }));
   },
   async respond(id, accept) { return check(await sb.rpc('respond_trade', { p_trade: id, p_accept: accept })); },
+  // Answer an offer with a different one; the original is closed as "countered".
+  async counter(tradeId, { offerItems = [], offerMint = false, requestItems = [], requestMint = false, message = '' }) {
+    check(await sb.rpc('counter_trade', {
+      p_trade: tradeId, p_offer_items: offerItems, p_offer_mint: offerMint,
+      p_request_items: requestItems, p_request_mint: requestMint, p_message: message,
+    }));
+  },
+
+  // ---------- wishlists and collection stats ----------
+  async wishlist() { return check(await sb.from('wishlist').select('user_id, card_id, created_at')); },
+  async setWish(cardId, on) {
+    const uid = session.user.id;
+    if (on) check(await sb.from('wishlist').upsert({ user_id: uid, card_id: cardId }, { onConflict: 'user_id,card_id', ignoreDuplicates: true }));
+    else check(await sb.from('wishlist').delete().eq('user_id', uid).eq('card_id', cardId));
+  },
+  async allItems() { return check(await sb.from('items').select('id, card_id, version_id, owner_id, edition, serial').limit(10000)); },
+  async allVersions() {
+    return check(await sb.from('card_versions').select('id, card_id, version, original2_given, copies_minted, msgCount:data->msgCount').limit(10000));
+  },
   async cancel(id) { check(await sb.rpc('cancel_trade', { p_trade: id })); },
 
   // Live trade updates: calls cb(trade, event) for offers to or from the signed-in player.

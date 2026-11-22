@@ -1,9 +1,10 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v9';
-import { renderCard, blankCard, cleanCard, editionLabel, THEMES, NAME_FONTS, FRAMES, FINISHES, COLOR_KEYS, THEME_COLORS, nextTier, clip } from './card.js?v9';
-import { parseExport, sources, computeStats, suggest } from './export.js?v9';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v10';
+import { renderCard, blankCard, cleanCard, editionLabel, THEMES, NAME_FONTS, FRAMES, FINISHES, COLOR_KEYS, THEME_COLORS, nextTier, clip } from './card.js?v10';
+import { parseExport, sources, computeStats, suggest } from './export.js?v10';
+import { buildWorld, playerStats, badgesFor, leaderboards, BADGES } from './goals.js?v10';
 
 const live = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-const { api } = live ? await import('./api-supabase.js?v9') : await import('./api-local.js?v9');
+const { api } = live ? await import('./api-supabase.js?v10') : await import('./api-local.js?v10');
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -493,10 +494,38 @@ async function shrinkImage(file) {
 
 // ---------------------------------------------------------------- collection
 
+// Everything needed for badges, wishlists and the leaderboard, in one go.
+async function loadWorld() {
+  const [items, versions, wishlist] = await Promise.all([
+    api.allItems(), api.allVersions(), api.wishlist().catch(() => []),
+  ]);
+  state.wishlist = wishlist;
+  return buildWorld({
+    players: state.players.map((p) => ({ id: p.id, username: p.username || 'Someone', card: p.card && { id: p.card.id, current_version: p.card.current_version, hidden: p.card.hidden } })),
+    items, versions, wishlist,
+  });
+}
+const worldPlayer = (world, id) => world.players.find((p) => p.id === id) || { id, username: state.me.username, card: null };
+
+function badgeGrid(badges) {
+  return h('div', { class: 'goals' }, badges.map((b) => h('div', { class: 'goal' + (b.earned ? ' earned' : ''), title: b.desc },
+    h('span', { class: 'b-icon', text: b.icon }),
+    h('div', { class: 'b-text' }, h('b', { text: b.name }), h('span', { text: b.desc })),
+    b.earned ? h('span', { class: 'b-state', text: 'Earned' })
+      : h('div', { class: 'b-progress' },
+        h('div', { class: 'b-bar' }, h('i', { style: 'width:' + Math.round((b.have / b.goal) * 100) + '%' })),
+        h('span', { text: b.label })))));
+}
+
 async function renderCollection() {
   await refreshPlayers();
   const items = await api.items(state.me.id);
   await loadVersions(items);
+  const world = await loadWorld();
+  const stats = playerStats(world, worldPlayer(world, state.me.id));
+  const badges = badgesFor(stats);
+  const earned = badges.filter((b) => b.earned).length;
+
   items.sort((a, b) => cardName(a.card_id).localeCompare(cardName(b.card_id)) || a.version - b.version
     || (a.edition === b.edition ? a.serial - b.serial : a.edition === 'original' ? -1 : 1));
   const grid = h('div', { class: 'cards' });
@@ -509,18 +538,62 @@ async function renderCollection() {
         isLocked(it) ? h('div', { class: 'muted', text: 'Yours forever, can’t be traded' }) : null),
       h('a', { class: 'btn ghost small', href: shareHash(card.id, it.version) }, 'Share')));
   }
+
+  const wishes = state.wishlist.filter((w) => w.user_id === state.me.id).map((w) => state.cardsById.get(w.card_id)).filter(Boolean);
+  const wishGrid = h('div', { class: 'cards' }, wishes.map((card) => {
+    const owner = state.playersById.get(card.creator_id);
+    return h('div', { class: 'slot' },
+      cardThumb(card, card.data),
+      h('div', { class: 'meta' }, h('b', { text: playerName(card.creator_id) + '’s card' }),
+        h('div', { class: 'muted', text: 'Next from them: ' + nextEdition(card) }),
+        items.some((i) => i.card_id === card.id) ? h('div', { class: 'wish-tag', style: 'margin:0', text: '✓ You already have one' }) : null),
+      h('div', { class: 'row', style: 'justify-content:center' },
+        owner ? h('button', { class: 'btn', type: 'button', onclick: () => openTrade(owner) }, 'Propose a trade') : null,
+        h('button', { class: 'btn ghost small', type: 'button', onclick: async () => { await attempt(() => api.setWish(card.id, false), 'Removed from your wishlist'); renderCollection(); } }, 'Remove')));
+  }));
+
   view.replaceChildren(
     h('div', { class: 'head-row' }, h('div', {}, h('h1', {}, 'Collection'),
-      h('p', { class: 'lead' }, items.length + (items.length === 1 ? ' card' : ' cards') + '. Click one to flip it.'))),
-    items.length ? grid : h('div', { class: 'empty' }, h('h3', {}, 'No cards yet'),
-      h('p', {}, 'Make your card to get Original 1/2, then trade with players to collect theirs.'),
-      h('a', { class: 'btn primary', href: '#card' }, 'Make your card')));
+      h('p', { class: 'lead' }, items.length + (items.length === 1 ? ' card' : ' cards') + ' · ' + earned + ' of ' + badges.length + ' badges · collection score ' + stats.score.toLocaleString())),
+      h('a', { class: 'btn', href: '#leaderboard' }, 'Leaderboard')),
+    h('div', { class: 'stack', style: 'gap:34px' },
+      h('section', { class: 'stack' }, h('h2', {}, 'Goals'), badgeGrid(badges)),
+      h('section', { class: 'stack' }, h('h2', {}, 'Wishlist'),
+        wishes.length ? wishGrid : h('p', { class: 'muted', text: 'Star cards on the Players page to keep track of the ones you want. Their owners can see who wants their card.' })),
+      h('section', { class: 'stack' }, h('h2', {}, 'Your cards'),
+        items.length ? grid : h('div', { class: 'empty' }, h('h3', {}, 'No cards yet'),
+          h('p', {}, 'Make your card to get Original 1/2, then trade with players to collect theirs.'),
+          h('a', { class: 'btn primary', href: '#card' }, 'Make your card')))));
+}
+
+// ---------------------------------------------------------------- leaderboard
+
+async function renderLeaderboard() {
+  await refreshPlayers();
+  const lb = leaderboards(await loadWorld());
+  const board = (title, note, rows, value) => h('section', { class: 'panel board' },
+    h('h3', {}, title), h('p', { class: 'muted small', style: 'margin:4px 0 0', text: note }),
+    rows.length ? h('ol', {}, rows.map((r, i) => h('li', { class: r.player && r.player.id === state.me.id ? 'me' : '' },
+      h('span', { class: 'lb-rank', text: String(i + 1) }),
+      h('span', { class: 'lb-who', text: r.player ? r.player.username : cardName(r.card.id) + ' (' + playerName(r.card.creator_id) + ')' }),
+      h('span', { class: 'lb-val', text: value(r) }))))
+      : h('p', { class: 'muted', text: 'Nobody yet. Start trading!' }));
+  view.replaceChildren(
+    h('div', { class: 'head-row' }, h('div', {}, h('h1', {}, 'Leaderboard'),
+      h('p', { class: 'lead' }, 'Worked out live from everyone’s collections. Hidden cards don’t count.'))),
+    h('div', { class: 'boards' },
+      board('Best collection', 'Originals are worth 10, copies 2, times the card’s rarity (Rare ×1.5 up to Mythic ×4), plus 5 for each vintage card.', lb.score, (r) => r.value.toLocaleString() + ' pts'),
+      board('Most cards collected', 'Cards from other players.', lb.cards, (r) => r.value + (r.value === 1 ? ' card' : ' cards')),
+      board('Biggest set', 'Different players you hold a card from.', lb.set, (r) => r.value + (r.value === 1 ? ' player' : ' players')),
+      board('Most badges', 'Out of ' + BADGES.length + '.', lb.badges, (r) => r.value + (r.value === 1 ? ' badge' : ' badges')),
+      board('Most-traded cards', 'Editions handed out across all versions.', lb.traded, (r) => r.value + ' traded' + (r.wanted ? ' · ' + r.wanted + ' want it' : ''))));
 }
 
 // ---------------------------------------------------------------- players
 
 async function renderPlayers() {
   await refreshPlayers();
+  state.wishlist = await api.wishlist().catch(() => []);
   const grid = h('div', { class: 'cards' });
   const others = state.players.filter((p) => p.id !== state.me.id);
   for (const p of others) {
@@ -533,9 +606,11 @@ async function renderPlayers() {
       h('div', { class: 'meta' }, h('b', { text: p.username }),
         c && !hiddenFromMe ? h('div', { class: 'muted', text: (c.current_version > 1 ? 'Version ' + c.current_version + ' · ' : '')
           + (out ? out + ' traded out · next is ' + nextEdition(c) : 'Original 2/2 still available') }) : null,
-        c && c.hidden && canSeeHidden(c) ? h('div', { class: 'muted', text: 'Hidden from other players' }) : null),
+        c && c.hidden && canSeeHidden(c) ? h('div', { class: 'muted', text: 'Hidden from other players' }) : null,
+        c && wantCount(c.id) ? h('div', { class: 'muted', text: '♥ ' + wantCount(c.id) + (wantCount(c.id) === 1 ? ' player wants' : ' players want') + ' this' }) : null),
       h('div', { class: 'row', style: 'justify-content:center' },
         h('button', { class: 'btn', type: 'button', onclick: () => openTrade(p) }, 'Propose a trade'),
+        c && !hiddenFromMe ? wishButton(c, renderPlayers) : null,
         c && !hiddenFromMe ? h('a', { class: 'btn ghost small', href: shareHash(c.id, c.current_version) }, 'View') : null,
         c && !hiddenFromMe ? h('button', { class: 'btn ghost small', type: 'button', onclick: () => openReport(c, p.username) }, 'Report') : null)));
   }
@@ -543,6 +618,19 @@ async function renderPlayers() {
     h('div', { class: 'head-row' }, h('div', {}, h('h1', {}, 'Players'),
       h('p', { class: 'lead' }, live ? 'Everyone who has signed in. Invite friends by sending them this site’s link.' : 'Sample players for demo mode.'))),
     others.length ? grid : h('div', { class: 'empty' }, h('h3', {}, 'Nobody else is here yet'), h('p', {}, 'Send your friends the link so they can sign in and make cards.')));
+}
+
+const wantCount = (cardId) => state.wishlist.filter((w) => w.card_id === cardId).length;
+const iWant = (cardId) => state.wishlist.some((w) => w.user_id === state.me.id && w.card_id === cardId);
+function wishButton(card, after) {
+  const on = iWant(card.id);
+  return h('button', {
+    class: 'btn ghost small wish' + (on ? ' on' : ''), type: 'button', 'aria-pressed': on ? 'true' : 'false',
+    title: on ? 'Remove from your wishlist' : 'Add to your wishlist', onclick: async () => {
+      await attempt(() => api.setWish(card.id, !on), on ? 'Removed from your wishlist' : 'Added to your wishlist');
+      after();
+    },
+  }, on ? '★ Wanted' : '☆ Want');
 }
 
 function openReport(card, owner) {
@@ -558,26 +646,37 @@ function openReport(card, owner) {
     reason, h('div', { class: 'row' }, send, h('button', { class: 'btn ghost', type: 'button', onclick: closeModal }, 'Cancel'))));
 }
 
-async function openTrade(other) {
+// opts.counter: an incoming offer to answer; the window opens with it reversed so it can be changed.
+async function openTrade(other, opts = {}) {
   await refreshPlayers();
+  state.wishlist = await api.wishlist().catch(() => []);
   const mine = (await api.items(state.me.id)).filter((i) => !isLocked(i));
   const theirs = (await api.items(other.id)).filter((i) => !isLocked(i));
   await loadVersions([...mine, ...theirs]);
   const myCard = state.players.find((p) => p.id === state.me.id)?.card || null;
   const theirCard = state.players.find((p) => p.id === other.id)?.card || null;
-  const pick = { offer: new Set(), request: new Set(), offerMint: false, requestMint: false };
+  const t = opts.counter;
+  const pick = t
+    ? { offer: new Set(t.request_items.filter((id) => mine.some((i) => i.id === id))), request: new Set(t.offer_items.filter((id) => theirs.some((i) => i.id === id))), offerMint: !!t.request_mint, requestMint: !!t.offer_mint }
+    : { offer: new Set(), request: new Set(), offerMint: false, requestMint: false };
+  // wishlist hints: what they want from you, and what you want from them
+  const theyWant = new Set(state.wishlist.filter((w) => w.user_id === other.id).map((w) => w.card_id));
+  const youWant = new Set(state.wishlist.filter((w) => w.user_id === state.me.id).map((w) => w.card_id));
+  const hint = (cardId, mineSide) => ((mineSide ? theyWant : youWant).has(cardId)
+    ? h('span', { class: 'wish-tag', text: mineSide ? '♥ they want this' : '★ on your wishlist' }) : null);
 
   const side = (title, items, key, mintCard, mintKey, mintLabel) => {
     const box = h('div', { class: 'pick' });
+    const mineSide = key === 'offer';
     if (mintCard && !mintCard.hidden) {
-      const cb = h('input', { type: 'checkbox' });
+      const cb = h('input', { type: 'checkbox', checked: pick[mintKey] });
       cb.addEventListener('change', () => { pick[mintKey] = cb.checked; });
-      box.append(h('label', { class: 'mint' }, cb, h('span', {}, mintLabel, ' ', h('span', { class: 'muted', text: '(' + nextEdition(mintCard) + ')' }))));
+      box.append(h('label', { class: 'mint' }, cb, h('span', {}, mintLabel, ' ', h('span', { class: 'muted', text: '(' + nextEdition(mintCard) + ')' })), hint(mintCard.id, mineSide)));
     }
     items.forEach((it) => {
-      const cb = h('input', { type: 'checkbox' });
+      const cb = h('input', { type: 'checkbox', checked: pick[key].has(it.id) });
       cb.addEventListener('change', () => { cb.checked ? pick[key].add(it.id) : pick[key].delete(it.id); });
-      box.append(h('label', {}, cb, h('span', { text: itemLabel(it) })));
+      box.append(h('label', {}, cb, h('span', { text: itemLabel(it) }), hint(it.card_id, mineSide)));
     });
     if (!(mintCard && !mintCard.hidden) && !items.length) box.append(h('p', { class: 'muted small', text: 'Nothing to trade here yet.' }));
     return h('div', {}, h('h4', {}, title), box);
@@ -587,17 +686,21 @@ async function openTrade(other) {
   const send = h('button', {
     class: 'btn primary', type: 'button', onclick: async () => {
       send.disabled = true;
+      const payload = {
+        to: other.id, offerItems: [...pick.offer], offerMint: pick.offerMint,
+        requestItems: [...pick.request], requestMint: pick.requestMint, message: msg.value.trim(),
+      };
       try {
-        await attempt(() => api.propose({
-          to: other.id, offerItems: [...pick.offer], offerMint: pick.offerMint,
-          requestItems: [...pick.request], requestMint: pick.requestMint, message: msg.value.trim(),
-        }), 'Offer sent to ' + other.username);
+        if (t) await attempt(() => api.counter(t.id, payload), 'Counter-offer sent to ' + other.username);
+        else await attempt(() => api.propose(payload), 'Offer sent to ' + other.username);
         closeModal();
+        if (location.hash === '#trades') renderTrades();
       } catch { send.disabled = false; }
     },
-  }, 'Send offer');
+  }, t ? 'Send counter-offer' : 'Send offer');
 
-  openModal('Trade with ' + other.username, h('div', { class: 'stack' },
+  openModal((t ? 'Counter-offer to ' : 'Trade with ') + other.username, h('div', { class: 'stack' },
+    t ? h('p', { class: 'muted small', style: 'margin:0', text: 'This starts as their offer turned around. Change what you give or get, then send it. Their original offer closes as “countered”.' }) : null,
     h('div', { class: 'trade-sides' },
       side('You give', mine, 'offer', myCard, 'offerMint', 'A new edition of your card'),
       side('You get', theirs, 'request', theirCard, 'requestMint', 'A new edition of ' + other.username + '’s card')),
@@ -640,13 +743,16 @@ async function renderTrades() {
           toast(r === 'accepted' ? 'Trade done. Check your collection.' : 'That trade can’t go through anymore: one of the cards changed hands.', r !== 'accepted');
           renderTrades(); refreshBadge();
         } }, 'Accept'),
+        h('button', { class: 'btn', type: 'button', onclick: () => openTrade(state.playersById.get(t.from_user) || { id: t.from_user, username: playerName(t.from_user) }, { counter: t }) }, 'Counter'),
         h('button', { class: 'btn', type: 'button', onclick: async () => { await attempt(() => api.respond(t.id, false), 'Declined'); renderTrades(); refreshBadge(); } }, 'Decline'));
     } else if (t.status === 'pending') {
       actions.append(h('button', { class: 'btn', type: 'button', onclick: async () => { await attempt(() => api.cancel(t.id), 'Offer cancelled'); renderTrades(); } }, 'Cancel offer'));
     }
     return h('div', { class: 'panel trade' },
       h('div', { class: 'row' },
-        h('b', { text: incoming ? playerName(other) + ' wants to trade' : 'You offered ' + playerName(other) }),
+        h('b', { text: t.counter_of
+          ? (incoming ? playerName(other) + ' countered your offer' : 'You countered ' + playerName(other) + '’s offer')
+          : (incoming ? playerName(other) + ' wants to trade' : 'You offered ' + playerName(other)) }),
         h('span', { class: 'status ' + t.status, text: t.status }),
         h('span', { class: 'muted small', text: new Date(t.created_at).toLocaleString() })),
       t.message ? h('p', { class: 'muted', style: 'margin:0', text: '“' + t.message + '”' }) : null,
@@ -703,10 +809,10 @@ async function checkTrades() {
   if (seen.ready) {
     const fresh = pendingIn.filter((t) => !seen.incoming.has(t.id));
     if (fresh.length) await refreshPlayers();
-    fresh.forEach((t) => notify(playerName(t.from_user) + ' sent you a trade offer'));
+    fresh.forEach((t) => notify(playerName(t.from_user) + (t.counter_of ? ' countered your offer' : ' sent you a trade offer')));
     mineOut.forEach((t) => {
       const before = seen.outgoing.get(t.id);
-      if (before === 'pending' && t.status !== 'pending' && t.status !== 'cancelled') {
+      if (before === 'pending' && !['pending', 'cancelled', 'countered'].includes(t.status)) {
         notify(playerName(t.to_user) + (t.status === 'accepted' ? ' accepted your trade' : t.status === 'declined' ? ' declined your trade' : '’s trade couldn’t go through'));
       }
     });
@@ -856,7 +962,7 @@ async function renderAdmin() {
 
 // ---------------------------------------------------------------- routing
 
-const routes = { card: renderMyCard, collection: renderCollection, players: renderPlayers, trades: renderTrades, admin: renderAdmin };
+const routes = { card: renderMyCard, collection: renderCollection, players: renderPlayers, trades: renderTrades, leaderboard: renderLeaderboard, admin: renderAdmin };
 
 async function route() {
   const shared = parseViewHash();
