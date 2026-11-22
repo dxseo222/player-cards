@@ -1,9 +1,9 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v6';
-import { renderCard, blankCard, cleanCard, editionLabel, THEMES, nextTier, clip } from './card.js?v6';
-import { parseExport, sources, computeStats, suggest } from './export.js?v6';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v8';
+import { renderCard, blankCard, cleanCard, editionLabel, THEMES, NAME_FONTS, FRAMES, FINISHES, COLOR_KEYS, THEME_COLORS, nextTier, clip } from './card.js?v8';
+import { parseExport, sources, computeStats, suggest } from './export.js?v8';
 
 const live = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-const { api } = live ? await import('./api-supabase.js?v6') : await import('./api-local.js?v6');
+const { api } = live ? await import('./api-supabase.js?v8') : await import('./api-local.js?v8');
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -231,7 +231,7 @@ function exportPanel(rebuild, repaint) {
           quote: s.quote || draft.quote, quoteSource: s.quote ? s.quoteSource : draft.quoteSource,
           emblem: s.emblem, portraitLabels: s.portraitLabels, weaknesses: s.weaknesses,
           catchphrases: s.catchphrases, footer: s.footer, abilities: s.abilities,
-          theme: s.theme, accent: s.accent,
+          theme: s.theme, colors: { ...draft.colors, accent: s.accent },
         });
         draft = cleanCard(draft);
         rebuild();
@@ -306,18 +306,63 @@ function cardForm(repaint, rebuild) {
       type: 'button', class: 'chip-btn' + (draft.emblem === e ? ' on' : ''), onclick: () => { draft.emblem = e; rebuild(); repaint(); },
     }, e === 'moon' ? '🌕 moon' : e))) : null;
 
+  const pick = (label, options, value, fn) => h('label', { class: 'f' }, label,
+    h('select', { onchange: (e) => { fn(e.target.value); rebuild(); repaint(); } },
+      Object.entries(options).map(([k, v]) => h('option', { value: k, selected: k === value }, typeof v === 'string' ? v : v.label))));
+
+  // Colors: each picker starts on the theme's color; changing it makes it custom.
+  const themeColors = THEME_COLORS[draft.theme] || THEME_COLORS.requiem;
+  const colorRows = Object.entries(COLOR_KEYS).map(([k, label]) => {
+    const custom = draft.colors[k];
+    return h('div', { class: 'color-row' },
+      h('label', { class: 'f' }, label + (custom ? '' : ' (theme)'),
+        h('input', { type: 'color', value: custom || themeColors[k], oninput: (e) => { draft.colors[k] = e.target.value; repaint(); }, onchange: () => rebuild() })),
+      custom ? h('button', { class: 'btn ghost small', type: 'button', onclick: () => { draft.colors[k] = ''; rebuild(); repaint(); } }, 'Reset') : null);
+  });
+
   const look = h('fieldset', {}, h('legend', {}, 'Look'),
     h('div', { class: 'grid2' },
-      h('label', { class: 'f' }, 'Theme', h('select', { onchange: set((v) => { draft.theme = v; }) },
+      h('label', { class: 'f' }, 'Theme', h('select', { onchange: (e) => { draft.theme = e.target.value; rebuild(); repaint(); } },
         Object.entries(THEMES).map(([k, t]) => h('option', { value: k, selected: k === draft.theme }, t.label + (s && s.theme === k ? ' · matches your messages' : ''))))),
-      text('Portrait (an emoji, or "moon")', draft.emblem, (v) => { draft.emblem = v.trim() || 'moon'; }, { maxlength: 8 })),
-    emblemChips,
+      pick('Name font', NAME_FONTS, draft.nameFont, (v) => { draft.nameFont = v; })),
+    h('div', { class: 'grid2' },
+      pick('Frame', FRAMES, draft.frame, (v) => { draft.frame = v; }),
+      pick('Finish', FINISHES, draft.finish, (v) => { draft.finish = v; })),
+    h('div', { class: 'colors' }, colorRows),
+    s && s.accent ? h('p', { class: 'muted small', style: 'margin:0', text: 'The accent was suggested from the color you mention most.' }) : null);
+
+  // Portrait: an uploaded picture wins over the emoji / moon.
+  const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true, id: 'portraitFile' });
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    try {
+      toast('Uploading picture…');
+      const blob = await shrinkImage(file);
+      const old = draft.portraitUrl;
+      draft.portraitUrl = await api.uploadPortrait(blob);
+      if (old) api.removePortrait(old).catch(() => {});
+      rebuild(); repaint();
+      toast('Picture added. Save the card to keep it.');
+    } catch (e) { toast(e.message || 'Upload failed', true); }
+  });
+  const portrait = h('fieldset', {}, h('legend', {}, 'Portrait'),
     h('div', { class: 'row' },
-      h('label', { class: 'f' }, 'Accent color', h('input', { type: 'color', value: draft.accent || '#b3202b', oninput: set((v) => { draft.accent = v; }) })),
-      h('button', { class: 'btn ghost small', type: 'button', onclick: () => { draft.accent = ''; repaint(); toast('Using the theme’s own color'); } }, 'Use theme color'),
-      s && s.accent ? h('span', { class: 'muted small', text: 'Suggested from the color you mention most.' }) : null),
+      h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, draft.portraitUrl ? 'Change picture' : 'Upload a picture'),
+      draft.portraitUrl ? h('button', {
+        class: 'btn ghost', type: 'button', onclick: () => {
+          const old = draft.portraitUrl;
+          draft.portraitUrl = '';
+          api.removePortrait(old).catch(() => {});
+          rebuild(); repaint();
+        },
+      }, 'Remove picture') : null,
+      h('span', { class: 'muted small', text: 'PNG, JPG, WebP or GIF. Cropped to fit and shrunk before upload. Everyone signed in can see it.' })),
+    fileInput,
+    draft.portraitUrl ? null : text('Or an emoji (or "moon")', draft.emblem, (v) => { draft.emblem = v.trim() || 'moon'; }, { maxlength: 8 }),
+    draft.portraitUrl ? null : emblemChips,
     h('div', { class: 'grid3' }, [0, 1, 2].map((i) =>
-      text(['Portrait label, top right', 'Portrait label, bottom left', 'Portrait label, bottom right'][i], draft.portraitLabels[i], (v) => { draft.portraitLabels[i] = v; }, { maxlength: 26, list: 'dlStats' }))),
+      text(['Label, top right', 'Label, bottom left', 'Label, bottom right'][i], draft.portraitLabels[i], (v) => { draft.portraitLabels[i] = v; }, { maxlength: 26, list: 'dlStats' }))),
     datalist('dlStats', s && s.statOptions),
     s ? h('p', { class: 'muted small', style: 'margin:0', text: 'Click a label or footer field to pick from your stats, or type your own.' }) : null);
 
@@ -381,7 +426,37 @@ function cardForm(repaint, rebuild) {
     h('div', { class: 'grid3' }, [0, 1, 2].map((i) =>
       text('Footer ' + (i + 1), draft.footer[i], (v) => { draft.footer[i] = v; }, { maxlength: 22, list: 'dlStats' }))));
 
-  return h('section', { class: 'panel stack' }, identity, look, traits, words, abilities, record, back);
+  return h('section', { class: 'panel stack' }, identity, look, portrait, traits, words, abilities, record, back);
+}
+
+// Crops a picture to the portrait's 4:3 shape and shrinks it to 720×540 before upload,
+// so it stays small (usually under 100 KB). Animated GIFs become a still frame.
+async function shrinkImage(file) {
+  if (!/^image\//.test(file.type)) throw new Error('That file isn’t a picture');
+  if (file.size > 15 * 1024 * 1024) throw new Error('That picture is over 15 MB');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('Couldn’t open that picture'));
+      i.src = url;
+    });
+    const W = 720, H = 540;
+    const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+    const sw = W / scale, sh = H / scale;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    canvas.getContext('2d').drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, W, H);
+    const toBlob = (type, q) => new Promise((r) => canvas.toBlob(r, type, q));
+    let blob = await toBlob('image/webp', 0.82);
+    if (!blob || blob.type !== 'image/webp') blob = await toBlob('image/jpeg', 0.85);
+    if (!blob) throw new Error('Couldn’t process that picture');
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 // ---------------------------------------------------------------- collection

@@ -4,7 +4,7 @@
 // `entries` is a list of { path, file } where `path` is the file's path inside the
 // chosen folder (e.g. "Messages/c123/messages.json") and `file.text()` returns its text.
 
-import { rarityFor, clip } from './card.js?v6';
+import { rarityFor, clip } from './card.js?v8';
 
 const SLANG = [
   'idk', 'fr', 'icl', 'ngl', 'rn', 'tbh', 'lmao', 'lmfao', 'lol', 'bro', 'bruh', 'tho', 'nah',

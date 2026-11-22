@@ -5,7 +5,35 @@ export const THEMES = {
   requiem: { label: 'Requiem (black + blood red)', heading: (t) => '༒✞' + t + '✞༒', mark: '✞', bullet: '♱' },
   lilac: { label: 'Lilac (holo night)', heading: (t) => t.toUpperCase(), mark: '✦', bullet: '✦' },
   mono: { label: 'Mono (black + white)', heading: (t) => '// ' + t, mark: '+', bullet: '—' },
+  vapor: { label: 'Vapor (pink + cyan)', heading: (t) => '✧ ' + t + ' ✧', mark: '✧', bullet: '✧' },
+  toxic: { label: 'Toxic (acid green)', heading: (t) => '[' + t + ']', mark: '✕', bullet: '▸' },
+  gold: { label: 'Gold (black + gold)', heading: (t) => '— ' + t + ' —', mark: '◆', bullet: '◆' },
+  ice: { label: 'Ice (frost blue)', heading: (t) => '✻ ' + t, mark: '✻', bullet: '✻' },
 };
+
+// Each option is applied as a data attribute on the card; css/card.css does the rest.
+export const NAME_FONTS = {
+  theme: 'Theme default', gothic: 'Gothic', grotesk: 'Grotesk', mono: 'Mono', serif: 'Serif',
+  marker: 'Marker', pixel: 'Pixel', block: 'Block', script: 'Script',
+};
+export const FRAMES = { theme: 'Theme default', double: 'Double', holo: 'Holo foil', glitch: 'Glitch', thin: 'Thin' };
+export const FINISHES = { none: 'None', shimmer: 'Shimmer', grain: 'Grain', glow: 'Glow' };
+export const COLOR_KEYS = { frame: 'Frame', bg: 'Background', text: 'Text', accent: 'Accent' };
+// Each theme's own colors, shown in the color pickers until someone picks their own.
+export const THEME_COLORS = {
+  requiem: { frame: '#8e111b', bg: '#110c0c', text: '#ece3da', accent: '#b3202b' },
+  lilac: { frame: '#b8a2ff', bg: '#181425', text: '#f3effc', accent: '#b8a2ff' },
+  mono: { frame: '#e9e9e6', bg: '#0c0c0c', text: '#f2f2ef', accent: '#f2f2ef' },
+  vapor: { frame: '#b967ff', bg: '#1a1033', text: '#fdf3ff', accent: '#ff71ce' },
+  toxic: { frame: '#39ff14', bg: '#090d09', text: '#e6ffe0', accent: '#39ff14' },
+  gold: { frame: '#d4a72c', bg: '#0d0b07', text: '#f7eed6', accent: '#e0b84a' },
+  ice: { frame: '#8fd3ff', bg: '#0b1626', text: '#eef8ff', accent: '#8fd3ff' },
+};
+
+// Portraits are either a Supabase Storage public URL or (demo mode only) a small data URL.
+const PORTRAIT_URL = /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/object\/public\/portraits\/[\w\-/.]+$/;
+const PORTRAIT_DATA = /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/;
+const isColor = (v) => /^#[0-9a-f]{6}$/i.test(v || '');
 
 export const RARITIES = ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic'];
 
@@ -53,7 +81,11 @@ export function blankCard(name = '') {
     catchphrases: [],
     footer: ['', '', ''],
     theme: 'requiem',
-    accent: '',
+    nameFont: 'theme',
+    frame: 'theme',
+    finish: 'none',
+    colors: { frame: '', bg: '', text: '', accent: '' },
+    portraitUrl: '',
   };
 }
 
@@ -99,8 +131,43 @@ export function cleanCard(c) {
     catchphrases: arr(c.catchphrases).map((w) => s(w, 16)).filter(Boolean).slice(0, 6),
     footer: [0, 1, 2].map((i) => s(arr(c.footer)[i], 22)),
     theme: THEMES[c.theme] ? c.theme : 'requiem',
-    accent: /^#[0-9a-f]{6}$/i.test(c.accent || '') ? c.accent : '',
+    nameFont: NAME_FONTS[c.nameFont] ? c.nameFont : 'theme',
+    frame: FRAMES[c.frame] ? c.frame : 'theme',
+    finish: FINISHES[c.finish] ? c.finish : 'none',
+    // older cards kept a single `accent`; it now lives in colors.accent
+    colors: Object.fromEntries(Object.keys(COLOR_KEYS).map((k) => {
+      const v = (c.colors && c.colors[k]) || (k === 'accent' ? c.accent : '');
+      return [k, isColor(v) ? v.toLowerCase() : ''];
+    })),
+    portraitUrl: typeof c.portraitUrl === 'string' && (PORTRAIT_URL.test(c.portraitUrl) || (PORTRAIT_DATA.test(c.portraitUrl) && c.portraitUrl.length < 400000)) ? c.portraitUrl : '',
   };
+}
+
+// Custom colors become CSS variables; the in-between shades are mixed from them.
+function applyColors(card, colors) {
+  const set = (k, v) => card.style.setProperty(k, v);
+  if (colors.frame) set('--pc-frame', colors.frame);
+  if (colors.bg) {
+    set('--pc-card', colors.bg);
+    set('--pc-card-2', 'color-mix(in srgb, ' + colors.bg + ' 88%, white)');
+    set('--pc-portrait', 'color-mix(in srgb, ' + colors.bg + ' 80%, black)');
+  }
+  if (colors.text) {
+    set('--pc-fg', colors.text);
+    set('--pc-fg-2', 'color-mix(in srgb, ' + colors.text + ' 75%, var(--pc-card))');
+    set('--pc-muted', 'color-mix(in srgb, ' + colors.text + ' 52%, var(--pc-card))');
+  }
+  if (colors.bg || colors.text) {
+    set('--pc-line', 'color-mix(in srgb, var(--pc-card) 78%, var(--pc-fg))');
+    set('--pc-pip-off', 'color-mix(in srgb, var(--pc-card) 86%, var(--pc-fg))');
+  }
+  if (colors.accent) {
+    set('--pc-accent', colors.accent);
+    set('--pc-accent-2', 'color-mix(in srgb, ' + colors.accent + ' 60%, white)');
+    set('--pc-strong', 'color-mix(in srgb, ' + colors.accent + ' 78%, black)');
+    set('--pc-glow', 'color-mix(in srgb, ' + colors.accent + ' 16%, transparent)');
+    card.dataset.customAccent = '';
+  }
 }
 
 export function editionLabel(item) {
@@ -123,7 +190,10 @@ export function renderCard(raw, opts = {}) {
 
   const card = h('div', 'pc' + (opts.size === 'thumb' ? ' pc-thumb' : ''));
   card.dataset.theme = c.theme;
-  if (c.accent) card.style.setProperty('--pc-accent', c.accent);
+  card.dataset.nameFont = c.nameFont;
+  card.dataset.frame = c.frame;
+  card.dataset.finish = c.finish;
+  applyColors(card, c.colors);
   if (flippable) {
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
@@ -166,9 +236,21 @@ export function renderCard(raw, opts = {}) {
 
   const portrait = h('div', 'pc-portrait');
   portrait.setAttribute('aria-hidden', 'true');
-  ['c1', 'c2', 'c3'].forEach((k) => portrait.append(h('span', 'pc-cross ' + k, theme.mark)));
-  if (c.emblem === 'moon') portrait.append(h('span', 'pc-moon'));
-  else portrait.append(h('span', 'pc-emblem', c.emblem));
+  if (c.portraitUrl) {
+    const img = document.createElement('img');
+    img.className = 'pc-photo';
+    img.src = c.portraitUrl;
+    img.alt = '';
+    // not lazy: lazy loading never fires inside the card's 3D flip layer
+    img.decoding = 'async';
+    img.referrerPolicy = 'no-referrer';
+    portrait.classList.add('has-photo');
+    portrait.append(img);
+  } else {
+    ['c1', 'c2', 'c3'].forEach((k) => portrait.append(h('span', 'pc-cross ' + k, theme.mark)));
+    if (c.emblem === 'moon') portrait.append(h('span', 'pc-moon'));
+    else portrait.append(h('span', 'pc-emblem', c.emblem));
+  }
   ['tr', 'bl', 'br'].forEach((pos, i) => { if (c.portraitLabels[i]) portrait.append(h('span', 'pc-lbl ' + pos, c.portraitLabels[i])); });
   fb.append(portrait);
 

@@ -2,7 +2,7 @@
 // supabase/schema.sql, so they can't be bypassed from the browser.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v6';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v8';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const listeners = new Set();
@@ -52,6 +52,25 @@ export const api = {
     return rows[0] || null;
   },
   async saveCard(data) { return check(await sb.rpc('save_card', { p_data: data })); },
+  // Portraits go in the public "portraits" bucket under the player's own folder.
+  async uploadPortrait(blob) {
+    const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/png' ? 'png' : 'jpg';
+    const path = session.user.id + '/' + Date.now() + '.' + ext;
+    const { error } = await sb.storage.from('portraits').upload(path, blob, { contentType: blob.type, cacheControl: '31536000', upsert: false });
+    if (error) {
+      if (/bucket not found/i.test(error.message)) throw new Error('Portrait storage isn’t set up yet. Run supabase/002_portraits.sql in Supabase.');
+      throw new Error(error.message || 'Upload failed');
+    }
+    return sb.storage.from('portraits').getPublicUrl(path).data.publicUrl;
+  },
+  async removePortrait(url) {
+    const marker = '/storage/v1/object/public/portraits/';
+    const i = (url || '').indexOf(marker);
+    if (i < 0) return;
+    const path = decodeURIComponent(url.slice(i + marker.length));
+    if (!path.startsWith(session.user.id + '/')) return;
+    await sb.storage.from('portraits').remove([path]);
+  },
   async items(ownerId) { return check(await sb.from('items').select('*').eq('owner_id', ownerId)); },
   async itemsByIds(ids) {
     if (!ids.length) return [];

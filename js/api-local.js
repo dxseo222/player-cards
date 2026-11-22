@@ -2,7 +2,7 @@
 // localStorage. Used automatically when config.js has no Supabase keys, so the whole app
 // (cards, originals/copies, trades) can be tried locally before setting anything up.
 
-import { blankCard } from './card.js?v6';
+import { blankCard } from './card.js?v8';
 
 const KEY = 'player-cards-demo-v1';
 let memory = null;
@@ -94,6 +94,16 @@ export const api = {
     save();
     return c.id;
   },
+  // Demo mode keeps the (already shrunk) picture inside the card as a data URL.
+  async uploadPortrait(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(new Error('Could not read that picture'));
+      r.readAsDataURL(blob);
+    });
+  },
+  async removePortrait() { },
   async items(ownerId) { return clone(load().items.filter((i) => i.owner_id === ownerId)); },
   async itemsByIds(ids) { return clone(load().items.filter((i) => ids.includes(i.id))); },
   async trades() {
