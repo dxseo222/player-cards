@@ -185,6 +185,9 @@ legend { font-family: var(--head); font-weight: 700; font-size: 18px; margin-bot
 .chip-btn:hover { border-color: var(--accent); color: var(--fg); }
 .chip-btn.on { background: var(--accent-2); border-color: var(--accent-2); color: var(--fg); }
 .chip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.record-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.record-row { display: grid; gap: 4px; }
+@media (max-width: 560px) { .record-grid { grid-template-columns: 1fr 1fr; } }
 .rarity-read { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 4px; background: #0f0c0d; }
 .rarity-read b { color: var(--fg); font-weight: 600; }
 

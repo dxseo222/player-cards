@@ -4,7 +4,7 @@
 // `entries` is a list of { path, file } where `path` is the file's path inside the
 // chosen folder (e.g. "Messages/c123/messages.json") and `file.text()` returns its text.
 
-import { rarityFor } from './card.js';
+import { rarityFor } from './card.js?v5';
 
 const SLANG = [
   'idk', 'fr', 'icl', 'ngl', 'rn', 'tbh', 'lmao', 'lmfao', 'lol', 'bro', 'bruh', 'tho', 'nah',
@@ -395,8 +395,31 @@ export function suggest(stats, quoteSeed = 0) {
 
   const quoteCandidates = shuffle(s.quotes, quoteSeed).slice(0, 6).map((q) => ({ text: q.text, date: fmtDate(q.date) }));
 
+  // back of the card: a record like a real trading card, and lore written from the history
+  const since = MONTHS[s.first.getMonth()] + ' ' + s.first.getFullYear();
+  const record = [
+    { label: 'Messages', value: fmt(s.total) },
+    { label: 'Days online', value: fmt(s.daysActive) },
+    { label: 'Best streak', value: fmt(s.streak) + ' days' },
+    { label: 'Peak month', value: s.peakMonth },
+    { label: 'Most active', value: hourLabel(s.peakHour) },
+    top ? { label: 'Home server', value: top[0] } : { label: 'Per day', value: fmt(s.perDay) + ' msgs' },
+  ];
+  const loreParts = [
+    'On Discord since ' + since + '.',
+    'Peaked in ' + s.peakMonth + ' with ' + fmt(s.peakMonthCount) + ' messages in one month.',
+    top ? 'Calls ' + top[0] + ' home.' : null,
+    s.lateNight > 0.12 ? 'Comes alive after midnight.' : s.morning > 0.3 ? 'Up before everyone else.' : null,
+    s.streak >= 100 ? 'Once went ' + fmt(s.streak) + ' days without missing one.' : null,
+    'Known for ' + ROLES[mainInterest].tag.toLowerCase() + ' energy.',
+  ].filter(Boolean);
+  let lore = '';
+  for (const p of loreParts) if ((lore + ' ' + p).trim().length <= 320) lore = (lore + ' ' + p).trim();
+
   return {
-    since: MONTHS[s.first.getMonth()] + ' ' + s.first.getFullYear(),
+    since,
+    record,
+    lore,
     msgCount: s.total,
     rarity: rarityFor(s.total),
     className,

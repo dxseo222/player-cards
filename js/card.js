@@ -49,6 +49,7 @@ export function blankCard(name = '') {
     abilities: [{ name: '', kind: '', desc: '' }],
     weaknesses: [],
     lore: '',
+    record: [],
     catchphrases: [],
     footer: ['', '', ''],
     theme: 'requiem',
@@ -78,6 +79,7 @@ export function cleanCard(c) {
     abilities: arr(c.abilities).slice(0, 4).map((a) => ({ name: s(a.name, 32), kind: s(a.kind, 12), desc: s(a.desc, 140) })),
     weaknesses: arr(c.weaknesses).map((w) => s(w, 90)).filter(Boolean).slice(0, 3),
     lore: s(c.lore, 320),
+    record: arr(c.record).slice(0, 6).map((r) => ({ label: s(r && r.label, 16), value: s(r && r.value, 20) })).filter((r) => r.label || r.value),
     catchphrases: arr(c.catchphrases).map((w) => s(w, 16)).filter(Boolean).slice(0, 6),
     footer: [0, 1, 2].map((i) => s(arr(c.footer)[i], 22)),
     theme: THEMES[c.theme] ? c.theme : 'requiem',
@@ -192,6 +194,18 @@ export function renderCard(raw, opts = {}) {
   bb.append(h('span', 'pc-corner tl', theme.mark), h('span', 'pc-corner tr', theme.mark));
 
   const section = (title) => { const s = h('div', 'pc-sec'); s.append(h('h4', 'pc-chan', theme.heading(title))); return s; };
+
+  if (c.record.length) {
+    const s = section('record');
+    const grid = h('div', 'pc-record');
+    c.record.forEach((r) => {
+      const cell = h('div', 'pc-stat');
+      cell.append(h('b', null, r.value), h('span', null, r.label));
+      grid.append(cell);
+    });
+    s.append(grid);
+    bb.append(s);
+  }
 
   const abilities = c.abilities.filter((a) => a.name || a.desc);
   if (abilities.length) {

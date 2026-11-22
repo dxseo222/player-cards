@@ -158,6 +158,8 @@
   display: grid;
   place-items: center;
 }
+/* when the back has more to say, the front's portrait grows to match instead of leaving a gap */
+.pc-front .pc-portrait { flex: 1 0 176px; height: auto; min-height: 176px; }
 .pc[data-theme="lilac"] .pc-portrait {
   background:
     radial-gradient(circle at 30% 25%, rgba(255, 169, 133, .35), transparent 55%),
@@ -267,6 +269,38 @@
 .pc-weak li { color: var(--pc-fg-2); font-size: 12.5px; overflow-wrap: anywhere; }
 .pc-wb { color: var(--pc-accent); margin-right: 8px; font-family: "JetBrains Mono", monospace; }
 .pc-lore { margin: 0; color: var(--pc-fg-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.pc-record { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.pc-stat {
+  display: grid;
+  gap: 1px;
+  padding: 6px 8px;
+  background: var(--pc-portrait);
+  border: 1px solid var(--pc-line);
+  border-radius: 4px;
+  min-width: 0;
+}
+.pc-stat b {
+  font-family: var(--pc-title);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.15;
+  color: var(--pc-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pc[data-theme="mono"] .pc-stat b { font-size: 13px; }
+.pc-stat span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--pc-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pc-moves { display: flex; flex-wrap: wrap; gap: 6px; }
 .pc-move { font-family: "JetBrains Mono", monospace; font-size: 11px; background: var(--pc-portrait); border: 1px solid var(--pc-line); border-radius: 3px; padding: 3px 7px; color: var(--pc-fg); }
 

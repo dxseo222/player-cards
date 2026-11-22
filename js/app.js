@@ -1,9 +1,9 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js';
-import { renderCard, blankCard, cleanCard, editionLabel, THEMES, nextTier } from './card.js';
-import { parseExport, sources, computeStats, suggest } from './export.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v5';
+import { renderCard, blankCard, cleanCard, editionLabel, THEMES, nextTier } from './card.js?v5';
+import { parseExport, sources, computeStats, suggest } from './export.js?v5';
 
 const live = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-const { api } = live ? await import('./api-supabase.js') : await import('./api-local.js');
+const { api } = live ? await import('./api-supabase.js?v5') : await import('./api-local.js?v5');
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -227,6 +227,7 @@ function exportPanel(rebuild, repaint) {
         lastSuggest = s;
         Object.assign(draft, {
           since: s.since, msgCount: s.msgCount, className: s.className, tags: s.tags, traits: s.traits,
+          record: s.record, lore: s.lore,
           quote: s.quote || draft.quote, quoteSource: s.quote ? s.quoteSource : draft.quoteSource,
           emblem: s.emblem, portraitLabels: s.portraitLabels, weaknesses: s.weaknesses,
           catchphrases: s.catchphrases, footer: s.footer, abilities: s.abilities,
@@ -365,6 +366,13 @@ function cardForm(repaint, rebuild) {
     }),
     datalist('dlAbilities', abilityOpts.map((x) => x.name)));
 
+  while (draft.record.length < 6) draft.record.push({ label: '', value: '' });
+  const record = h('fieldset', {}, h('legend', {}, 'Record (back of the card)'),
+    s ? h('p', { class: 'muted small', style: 'margin:0', text: 'Your real numbers. Rename or swap any of them.' }) : null,
+    h('div', { class: 'record-grid' }, draft.record.map((r, i) => h('div', { class: 'record-row' },
+      h('input', { type: 'text', value: r.value, maxlength: 20, placeholder: 'Value', 'aria-label': 'Record ' + (i + 1) + ' value', list: 'dlStats', oninput: set((v) => { draft.record[i].value = v; }) }),
+      h('input', { type: 'text', value: r.label, maxlength: 16, placeholder: 'Label', 'aria-label': 'Record ' + (i + 1) + ' label', oninput: set((v) => { draft.record[i].label = v; }) })))));
+
   while (draft.weaknesses.length < 3) draft.weaknesses.push('');
   const back = h('fieldset', {}, h('legend', {}, 'Weaknesses and lore'),
     draft.weaknesses.map((w, i) => text('Weakness ' + (i + 1), w, (v) => { draft.weaknesses[i] = v; }, { maxlength: 90, list: 'dlWeak' })),
@@ -373,7 +381,7 @@ function cardForm(repaint, rebuild) {
     h('div', { class: 'grid3' }, [0, 1, 2].map((i) =>
       text('Footer ' + (i + 1), draft.footer[i], (v) => { draft.footer[i] = v; }, { maxlength: 22, list: 'dlStats' }))));
 
-  return h('section', { class: 'panel stack' }, identity, look, traits, words, abilities, back);
+  return h('section', { class: 'panel stack' }, identity, look, traits, words, abilities, record, back);
 }
 
 // ---------------------------------------------------------------- collection
