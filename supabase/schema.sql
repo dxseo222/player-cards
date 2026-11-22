@@ -259,6 +259,16 @@ begin
   if not found then raise exception 'Trade not found or already answered'; end if;
 end $$;
 
+-- ---------- who may read what ----------
+-- Granted explicitly so it works whether or not the project exposes new tables automatically.
+-- Signed-in players can read (rows are still filtered by the policies above); nobody writes
+-- to the tables directly, only through the functions below.
+
+grant usage on schema public to authenticated;
+revoke all on public.profiles, public.cards, public.items, public.trades from anon;
+revoke insert, update, delete, truncate on public.profiles, public.cards, public.items, public.trades from authenticated;
+grant select on public.profiles, public.cards, public.items, public.trades to authenticated;
+
 -- ---------- who may call what ----------
 
 revoke all on function public._mint(uuid, uuid) from public, anon, authenticated;

@@ -1,7 +1,7 @@
 // Live backend: Supabase (Discord sign-in + Postgres). The trade rules themselves live in
 // supabase/schema.sql, so they can't be bypassed from the browser.
 
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
