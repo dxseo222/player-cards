@@ -1,0 +1,277 @@
+/* Player card. Each theme sets the same tokens; the layout never changes. */
+.pc {
+  --pc-w: 380px;
+  width: min(var(--pc-w), 100%);
+  perspective: 1400px;
+  cursor: pointer;
+  border-radius: var(--pc-radius);
+  outline: none;
+  font-family: var(--pc-body);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--pc-fg);
+  text-align: left;
+}
+
+/* ---------- themes ---------- */
+.pc[data-theme="requiem"] {
+  --pc-frame: #8e111b;
+  --pc-card: #110c0c;
+  --pc-card-2: #180f10;
+  --pc-line: #3a1d20;
+  --pc-fg: #ece3da;
+  --pc-fg-2: #bfb2a9;
+  --pc-muted: #8a7d79;
+  --pc-accent: #b3202b;
+  --pc-accent-2: #c98d99;
+  --pc-pip-off: #261617;
+  --pc-glow: rgba(179, 32, 43, .14);
+  --pc-portrait: #0b0707;
+  --pc-radius: 10px;
+  --pc-name: "UnifrakturMaguntia", "Old English Text MT", serif;
+  --pc-name-size: 56px;
+  --pc-title: "Grenze Gotisch", Georgia, serif;
+  --pc-body: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+.pc[data-theme="lilac"] {
+  --pc-frame: conic-gradient(from 210deg, #b8a2ff, #ffa985, #7fd3ff, #b8a2ff);
+  --pc-card: #181425;
+  --pc-card-2: #211b33;
+  --pc-line: #342c4d;
+  --pc-fg: #f3effc;
+  --pc-fg-2: #c2b9dc;
+  --pc-muted: #8d85aa;
+  --pc-accent: #b8a2ff;
+  --pc-accent-2: #ffa985;
+  --pc-pip-off: #2e2745;
+  --pc-glow: rgba(255, 255, 255, .09);
+  --pc-portrait: #120f1d;
+  --pc-radius: 22px;
+  --pc-name: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --pc-name-size: 46px;
+  --pc-title: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --pc-body: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+.pc[data-theme="mono"] {
+  --pc-frame: #e9e9e6;
+  --pc-card: #0c0c0c;
+  --pc-card-2: #141414;
+  --pc-line: #2c2c2c;
+  --pc-fg: #f2f2ef;
+  --pc-fg-2: #bdbdb8;
+  --pc-muted: #85857f;
+  --pc-accent: #f2f2ef;
+  --pc-accent-2: #bdbdb8;
+  --pc-pip-off: #262626;
+  --pc-glow: rgba(255, 255, 255, .06);
+  --pc-portrait: #080808;
+  --pc-radius: 4px;
+  --pc-name: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --pc-name-size: 40px;
+  --pc-title: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --pc-body: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---------- shell + flip ---------- */
+.pc:focus-visible .pc-face { box-shadow: 0 0 0 3px var(--pc-accent); }
+.pc-inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform .7s cubic-bezier(.2, .7, .2, 1);
+}
+.pc.flipped .pc-inner { transform: rotateY(180deg); }
+.pc-face {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: var(--pc-radius);
+  padding: 4px;
+  background: var(--pc-frame);
+  box-shadow: 0 30px 70px -24px rgba(0, 0, 0, .85);
+}
+.pc-back { transform: rotateY(180deg); }
+.pc-body {
+  position: relative;
+  height: 100%;
+  border-radius: calc(var(--pc-radius) - 3px);
+  background: linear-gradient(180deg, var(--pc-card-2), var(--pc-card) 40%);
+  outline: 1px solid var(--pc-line);
+  outline-offset: -7px;
+  padding: 20px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+.pc-body::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(220px 220px at var(--mx, 70%) var(--my, 12%), var(--pc-glow), transparent 70%);
+  pointer-events: none;
+}
+.pc-corner { position: absolute; font-size: 11px; line-height: 1; color: var(--pc-accent); font-family: "JetBrains Mono", monospace; }
+.pc-corner.tl { top: 11px; left: 12px; }
+.pc-corner.tr { top: 11px; right: 12px; }
+
+/* ---------- front ---------- */
+.pc-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; padding-top: 4px; }
+.pc-top > div:first-child { min-width: 0; }
+.pc-name {
+  font-family: var(--pc-name);
+  font-size: var(--pc-name-size);
+  line-height: .9;
+  overflow-wrap: anywhere;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .5);
+}
+.pc[data-theme="requiem"] .pc-name { text-shadow: 0 2px 0 #8e111b; }
+.pc[data-theme="lilac"] .pc-name { font-weight: 800; letter-spacing: -.02em; }
+.pc-aka { color: var(--pc-muted); font-size: 12px; margin-top: 8px; }
+.pc-rarity {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--pc-card);
+  background: var(--pc-accent);
+  padding: 5px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+.pc[data-theme="requiem"] .pc-rarity { color: var(--pc-fg); background: #8e111b; }
+.pc[data-theme="lilac"] .pc-rarity { background: linear-gradient(90deg, #b8a2ff, #ffa985); }
+
+.pc-portrait {
+  position: relative;
+  height: 176px;
+  border-radius: calc(var(--pc-radius) / 2);
+  background: var(--pc-portrait);
+  border: 1px solid var(--pc-line);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.pc[data-theme="lilac"] .pc-portrait {
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 169, 133, .35), transparent 55%),
+    radial-gradient(circle at 75% 80%, rgba(184, 162, 255, .40), transparent 55%),
+    var(--pc-portrait);
+}
+.pc-moon {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  transform: translateY(-4px);
+  background:
+    radial-gradient(circle at 34% 38%, rgba(0, 0, 0, .18) 0 9px, transparent 10px),
+    radial-gradient(circle at 62% 58%, rgba(0, 0, 0, .14) 0 14px, transparent 15px),
+    radial-gradient(circle at 58% 26%, rgba(0, 0, 0, .12) 0 6px, transparent 7px),
+    radial-gradient(circle at 40% 40%, #f3ebe2, #cdbfb4 70%, #a99a90);
+  box-shadow: 0 0 50px 6px var(--pc-glow), 0 0 40px 2px color-mix(in srgb, var(--pc-accent) 40%, transparent);
+}
+.pc-emblem { font-size: 92px; line-height: 1; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .5)); }
+.pc-cross { position: absolute; color: var(--pc-accent); opacity: .8; font-family: "JetBrains Mono", monospace; }
+.pc-cross.c1 { left: 16%; top: 22%; font-size: 18px; }
+.pc-cross.c2 { right: 15%; top: 58%; font-size: 14px; opacity: .6; }
+.pc-cross.c3 { left: 24%; bottom: 14%; font-size: 11px; opacity: .5; }
+.pc-lbl {
+  position: absolute;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--pc-fg-2);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  max-width: 48%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pc-lbl.tr { top: 10px; right: 12px; }
+.pc-lbl.bl { left: 12px; bottom: 10px; }
+.pc-lbl.br { right: 12px; bottom: 10px; color: var(--pc-muted); }
+
+.pc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.pc-tag { font-size: 11.5px; font-weight: 500; color: var(--pc-fg-2); border: 1px solid var(--pc-line); border-radius: 3px; padding: 3px 8px; }
+.pc-tag.main { color: var(--pc-fg); border-color: var(--pc-accent); }
+.pc[data-theme="requiem"] .pc-tag.main { background: #8e111b; border-color: #8e111b; }
+.pc[data-theme="mono"] .pc-tag.main { background: var(--pc-fg); color: var(--pc-card); }
+.pc[data-theme="lilac"] .pc-tag { border-radius: 999px; }
+
+.pc-traits { display: grid; gap: 7px; }
+.pc-trait { display: grid; grid-template-columns: 82px 1fr; align-items: center; gap: 10px; }
+.pc-trait span { font-family: "JetBrains Mono", monospace; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--pc-fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-pips { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+.pc-pips i { height: 8px; border-radius: 1px; background: var(--pc-pip-off); }
+.pc-pips i.on { background: var(--pc-accent); }
+.pc[data-theme="lilac"] .pc-pips i.on { background: linear-gradient(90deg, #b8a2ff, #ffa985); }
+
+.pc-quote {
+  margin: 0;
+  font-family: var(--pc-title);
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1.2;
+  border-left: 2px solid var(--pc-accent);
+  padding-left: 10px;
+  overflow-wrap: anywhere;
+}
+.pc[data-theme="mono"] .pc-quote { font-size: 14px; }
+.pc-quote small { display: block; font-family: var(--pc-body); font-size: 11px; color: var(--pc-muted); margin-top: 4px; }
+.pc-foot {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--pc-muted);
+  border-top: 1px solid var(--pc-line);
+  padding-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.pc-edition {
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  transform: translateX(-50%);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 3px 9px 4px;
+  border-radius: 4px 4px 0 0;
+  background: var(--pc-line);
+  color: var(--pc-fg-2);
+  white-space: nowrap;
+}
+.pc-edition.orig { background: var(--pc-accent); color: var(--pc-card); }
+.pc[data-theme="requiem"] .pc-edition.orig { background: #8e111b; color: var(--pc-fg); }
+
+/* ---------- back ---------- */
+.pc-chan { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 500; color: var(--pc-fg-2); margin: 0 0 8px; }
+.pc-ability { display: grid; grid-template-columns: 24px 1fr; gap: 8px; align-items: start; }
+.pc-ability + .pc-ability { margin-top: 9px; }
+.pc-ic { color: var(--pc-accent); font-size: 15px; line-height: 1.4; text-align: center; }
+.pc-ability b { display: block; font-family: var(--pc-title); font-weight: 700; font-size: 17px; line-height: 1.15; overflow-wrap: anywhere; }
+.pc[data-theme="mono"] .pc-ability b { font-size: 14px; }
+.pc-ability p { margin: 1px 0 0; color: var(--pc-fg-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.pc-kind { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--pc-accent-2); letter-spacing: .1em; text-transform: uppercase; margin-left: 6px; font-weight: 500; vertical-align: 2px; }
+.pc-weak { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.pc-weak li { color: var(--pc-fg-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.pc-wb { color: var(--pc-accent); margin-right: 8px; font-family: "JetBrains Mono", monospace; }
+.pc-lore { margin: 0; color: var(--pc-fg-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.pc-moves { display: flex; flex-wrap: wrap; gap: 6px; }
+.pc-move { font-family: "JetBrains Mono", monospace; font-size: 11px; background: var(--pc-portrait); border: 1px solid var(--pc-line); border-radius: 3px; padding: 3px 7px; color: var(--pc-fg); }
+
+/* ---------- small version for grids ---------- */
+.pc-thumb { zoom: .62; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-inner { transition: none; }
+  .pc-body::after { display: none; }
+}
+@media (max-width: 360px) {
+  .pc { --pc-name-size: 44px; }
+  .pc-trait { grid-template-columns: 72px 1fr; }
+}
