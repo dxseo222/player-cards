@@ -1,9 +1,9 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v5';
-import { renderCard, blankCard, cleanCard, editionLabel, THEMES, nextTier } from './card.js?v5';
-import { parseExport, sources, computeStats, suggest } from './export.js?v5';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v6';
+import { renderCard, blankCard, cleanCard, editionLabel, THEMES, nextTier, clip } from './card.js?v6';
+import { parseExport, sources, computeStats, suggest } from './export.js?v6';
 
 const live = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-const { api } = live ? await import('./api-supabase.js?v5') : await import('./api-local.js?v5');
+const { api } = live ? await import('./api-supabase.js?v6') : await import('./api-local.js?v6');
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -125,7 +125,7 @@ let quoteSeed = 1;
 
 async function renderMyCard() {
   const mine = await api.myCard();
-  draft = mine ? cleanCard(mine.data) : Object.assign(blankCard(state.me.username), { name: (state.me.username || 'player').toLowerCase().slice(0, 24) });
+  draft = mine ? cleanCard(mine.data) : Object.assign(blankCard(state.me.username), { name: clip((state.me.username || 'player').toLowerCase(), 24) });
 
   const preview = h('div', { class: 'preview' });
   const paint = () => {
@@ -246,7 +246,7 @@ function exportPanel(rebuild, repaint) {
       const box = h('div', { class: 'quotes', role: 'radiogroup', 'aria-label': 'Quote' });
       s.quoteCandidates.forEach((q) => {
         const r = h('input', { type: 'radio', name: 'quotePick', checked: q.text === draft.quote });
-        r.addEventListener('change', () => { draft.quote = q.text.slice(0, 120); draft.quoteSource = q.date; rebuild(); repaint(); });
+        r.addEventListener('change', () => { draft.quote = clip(q.text, 120); draft.quoteSource = q.date; rebuild(); repaint(); });
         box.append(h('label', {}, r, h('span', {}, h('span', { text: q.text }), h('span', { class: 'qdate', text: q.date }))));
       });
       return box;
@@ -370,7 +370,7 @@ function cardForm(repaint, rebuild) {
   const record = h('fieldset', {}, h('legend', {}, 'Record (back of the card)'),
     s ? h('p', { class: 'muted small', style: 'margin:0', text: 'Your real numbers. Rename or swap any of them.' }) : null,
     h('div', { class: 'record-grid' }, draft.record.map((r, i) => h('div', { class: 'record-row' },
-      h('input', { type: 'text', value: r.value, maxlength: 20, placeholder: 'Value', 'aria-label': 'Record ' + (i + 1) + ' value', list: 'dlStats', oninput: set((v) => { draft.record[i].value = v; }) }),
+      h('input', { type: 'text', value: r.value, maxlength: 32, placeholder: 'Value', 'aria-label': 'Record ' + (i + 1) + ' value', list: 'dlStats', oninput: set((v) => { draft.record[i].value = v; }) }),
       h('input', { type: 'text', value: r.label, maxlength: 16, placeholder: 'Label', 'aria-label': 'Record ' + (i + 1) + ' label', oninput: set((v) => { draft.record[i].label = v; }) })))));
 
   while (draft.weaknesses.length < 3) draft.weaknesses.push('');

@@ -2,7 +2,7 @@
 // supabase/schema.sql, so they can't be bypassed from the browser.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v5';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v6';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const listeners = new Set();

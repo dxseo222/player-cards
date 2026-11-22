@@ -57,9 +57,25 @@ export function blankCard(name = '') {
   };
 }
 
+// Shortens text to at most n UTF-16 units without cutting a character in half. Fancy
+// letters (𝕷𝖔𝖛𝖊) and emoji take two or more units; a half character makes the database
+// reject the whole card ("Empty or invalid json").
+const segmenter = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+export function clip(value, n) {
+  const str = String(value ?? '').replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '');
+  if (str.length <= n) return str;
+  let out = '';
+  const parts = segmenter ? Array.from(segmenter.segment(str), (x) => x.segment) : Array.from(str);
+  for (const p of parts) {
+    if (out.length + p.length > n) break;
+    out += p;
+  }
+  return out;
+}
+
 // Keeps whatever shape arrives (from the database or a form) within sane limits.
 export function cleanCard(c) {
-  const s = (v, n) => String(v ?? '').slice(0, n);
+  const s = (v, n) => clip(v, n);
   const arr = (v) => (Array.isArray(v) ? v : []);
   const b = blankCard();
   return {
@@ -79,7 +95,7 @@ export function cleanCard(c) {
     abilities: arr(c.abilities).slice(0, 4).map((a) => ({ name: s(a.name, 32), kind: s(a.kind, 12), desc: s(a.desc, 140) })),
     weaknesses: arr(c.weaknesses).map((w) => s(w, 90)).filter(Boolean).slice(0, 3),
     lore: s(c.lore, 320),
-    record: arr(c.record).slice(0, 6).map((r) => ({ label: s(r && r.label, 16), value: s(r && r.value, 20) })).filter((r) => r.label || r.value),
+    record: arr(c.record).slice(0, 6).map((r) => ({ label: s(r && r.label, 16), value: s(r && r.value, 32) })).filter((r) => r.label || r.value),
     catchphrases: arr(c.catchphrases).map((w) => s(w, 16)).filter(Boolean).slice(0, 6),
     footer: [0, 1, 2].map((i) => s(arr(c.footer)[i], 22)),
     theme: THEMES[c.theme] ? c.theme : 'requiem',

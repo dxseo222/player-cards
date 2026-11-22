@@ -4,7 +4,7 @@
 // `entries` is a list of { path, file } where `path` is the file's path inside the
 // chosen folder (e.g. "Messages/c123/messages.json") and `file.text()` returns its text.
 
-import { rarityFor } from './card.js?v5';
+import { rarityFor, clip } from './card.js?v6';
 
 const SLANG = [
   'idk', 'fr', 'icl', 'ngl', 'rn', 'tbh', 'lmao', 'lmfao', 'lol', 'bro', 'bruh', 'tho', 'nah',
@@ -391,7 +391,7 @@ export function suggest(stats, quoteSeed = 0) {
     'median ' + s.median + ' chars',
     s.topCustom[0] ? s.topCustom[0][0] + ' ×' + fmt(s.topCustom[0][1]) : null,
     s.slang[0] ? '"' + s.slang[0][0] + '" ×' + fmt(s.slang[0][1]) : null,
-  ].filter(Boolean).map((x) => x.slice(0, 26));
+  ].filter(Boolean).map((x) => clip(x, 26));
 
   const quoteCandidates = shuffle(s.quotes, quoteSeed).slice(0, 6).map((q) => ({ text: q.text, date: fmtDate(q.date) }));
 
@@ -400,7 +400,7 @@ export function suggest(stats, quoteSeed = 0) {
   const record = [
     { label: 'Messages', value: fmt(s.total) },
     { label: 'Days online', value: fmt(s.daysActive) },
-    { label: 'Best streak', value: fmt(s.streak) + ' days' },
+    { label: 'Best streak', value: fmt(s.streak) + (s.streak === 1 ? ' day' : ' days') },
     { label: 'Peak month', value: s.peakMonth },
     { label: 'Most active', value: hourLabel(s.peakHour) },
     top ? { label: 'Home server', value: top[0] } : { label: 'Per day', value: fmt(s.perDay) + ' msgs' },

@@ -2,7 +2,7 @@
 // localStorage. Used automatically when config.js has no Supabase keys, so the whole app
 // (cards, originals/copies, trades) can be tried locally before setting anything up.
 
-import { blankCard } from './card.js?v5';
+import { blankCard } from './card.js?v6';
 
 const KEY = 'player-cards-demo-v1';
 let memory = null;
