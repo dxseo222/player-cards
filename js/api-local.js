@@ -13,7 +13,7 @@ function uid() { return (crypto.randomUUID && crypto.randomUUID()) || String(Dat
 function sampleCard(name, theme, cls, emblem) {
   const c = blankCard(name);
   return Object.assign(c, {
-    theme, className: cls, emblem, rarity: 'Rare', since: 'Jan 2024',
+    theme, className: cls, emblem, msgCount: 12000, since: 'Jan 2024',
     tags: ['Sample card'], quote: 'this is a sample card for trying out trades',
     quoteSource: 'demo mode', portraitLabels: ['demo', '', ''], footer: ['sample', 'not a real person', ''],
     abilities: [{ name: 'Demo Mode', kind: 'Passive', desc: 'Exists so you can test trading before going live.' }],

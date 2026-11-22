@@ -1,5 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js';
-import { renderCard, blankCard, cleanCard, editionLabel, THEMES, RARITIES } from './card.js';
+import { renderCard, blankCard, cleanCard, editionLabel, THEMES, nextTier } from './card.js';
 import { parseExport, sources, computeStats, suggest } from './export.js';
 
 const live = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
@@ -97,7 +97,7 @@ async function renderHeader() {
 function renderSignIn() {
   const sample = blankCard('your name');
   Object.assign(sample, {
-    aka: 'your old username', since: 'Mar 2022', className: 'Bard · Producer', tags: ['Night owl', 'Server founder'],
+    aka: 'your old username', since: 'Mar 2022', msgCount: 100000, className: 'Nocturnal Bard', tags: ['Night owl', 'Server founder'],
     traits: [{ name: 'Loyalty', value: 9 }, { name: 'Heart', value: 8 }, { name: 'Hustle', value: 9 }, { name: 'Chaos', value: 7 }, { name: 'Tech', value: 6 }, { name: 'Patience', value: 3 }],
     quote: 'your most you message goes here', quoteSource: 'you, 2026', portraitLabels: ['online at 4am', '😭 ×9,999', ''],
     footer: ['100,000 msgs', '97% days online', "'22–'26"],
@@ -120,6 +120,7 @@ let draft = null;
 let parsedExport = null;
 let excluded = new Set();
 let lastStats = null;
+let lastSuggest = null;
 let quoteSeed = 1;
 
 async function renderMyCard() {
@@ -135,7 +136,7 @@ async function renderMyCard() {
   const repaint = () => { clearTimeout(t); t = setTimeout(paint, 60); };
 
   const form = h('div', { class: 'stack' });
-  const rebuild = () => form.replaceChildren(exportPanel(rebuild, repaint), cardForm(repaint), saveBar(mine));
+  const rebuild = () => form.replaceChildren(exportPanel(rebuild, repaint), cardForm(repaint, rebuild), saveBar(mine));
   rebuild();
   paint();
 
@@ -180,6 +181,7 @@ function exportPanel(rebuild, repaint) {
       parsedExport = await parseExport(files.map((f) => ({ path: f.webkitRelativePath || f.name, file: f })), (p) => { bar.firstChild.style.width = Math.round(p * 100) + '%'; });
       excluded = new Set();
       lastStats = null;
+      lastSuggest = null;
       rebuild();
     } catch (e) {
       bar.hidden = true;
@@ -222,13 +224,14 @@ function exportPanel(rebuild, repaint) {
         lastStats = computeStats(parsedExport, excluded);
         if (!lastStats) { toast('Nothing left to count. Tick at least one channel.', true); return; }
         const s = suggest(lastStats, quoteSeed);
+        lastSuggest = s;
         Object.assign(draft, {
-          since: s.since, className: s.className, tags: s.tags, traits: s.traits,
+          since: s.since, msgCount: s.msgCount, className: s.className, tags: s.tags, traits: s.traits,
           quote: s.quote || draft.quote, quoteSource: s.quote ? s.quoteSource : draft.quoteSource,
           emblem: s.emblem, portraitLabels: s.portraitLabels, weaknesses: s.weaknesses,
-          catchphrases: s.catchphrases, footer: s.footer,
+          catchphrases: s.catchphrases, footer: s.footer, abilities: s.abilities,
+          theme: s.theme, accent: s.accent,
         });
-        if (!draft.abilities.some((a) => a.name)) draft.abilities = s.abilities;
         draft = cleanCard(draft);
         rebuild();
         repaint();
@@ -241,26 +244,48 @@ function exportPanel(rebuild, repaint) {
       const s = suggest(lastStats, quoteSeed);
       const box = h('div', { class: 'quotes', role: 'radiogroup', 'aria-label': 'Quote' });
       s.quoteCandidates.forEach((q) => {
-        const r = h('input', { type: 'radio', name: 'quotePick', checked: q === draft.quote });
-        r.addEventListener('change', () => { draft.quote = q.slice(0, 120); rebuild(); repaint(); });
-        box.append(h('label', {}, r, h('span', { text: q })));
+        const r = h('input', { type: 'radio', name: 'quotePick', checked: q.text === draft.quote });
+        r.addEventListener('change', () => { draft.quote = q.text.slice(0, 120); draft.quoteSource = q.date; rebuild(); repaint(); });
+        box.append(h('label', {}, r, h('span', {}, h('span', { text: q.text }), h('span', { class: 'qdate', text: q.date }))));
       });
       return box;
     };
     panel.append(h('div', { class: 'stack' },
       h('div', { class: 'row' }, h('h3', {}, 'Pick a quote'),
         h('button', { class: 'btn', type: 'button', onclick: () => { quoteSeed++; rebuild(); } }, 'Shuffle')),
-      h('p', { class: 'muted small' }, 'Lines you actually sent. Only the one you pick goes on the card.'),
+      h('p', { class: 'muted small' }, 'Lines you actually sent, with the date you sent them. Only the one you pick goes on the card.'),
       pick()));
   }
   return panel;
 }
 
-function cardForm(repaint) {
+function cardForm(repaint, rebuild) {
+  const s = lastSuggest;
   const set = (fn) => (e) => { fn(e.target.value, e); repaint(); };
   const text = (label, value, fn, attrs = {}) => h('label', { class: 'f' }, label, h('input', { type: 'text', value: value || '', oninput: set(fn), ...attrs }));
   const area = (label, value, fn, attrs = {}) => h('label', { class: 'f' }, label, h('textarea', { oninput: set(fn), ...attrs }, value || ''));
   const list = (v) => v.split(',').map((x) => x.trim()).filter(Boolean);
+  // Dropdown suggestions from the export; the field still takes anything typed.
+  const datalist = (id, options) => h('datalist', { id }, (options || []).map((o) => h('option', { value: o })));
+  const from = s ? 'From your messages' : null;
+
+  // Rarity is set by message count, so it's shown, not picked.
+  const tier = draft.msgCount ? nextTier(draft.msgCount) : nextTier(0);
+  const rarityNote = draft.msgCount
+    ? draft.msgCount.toLocaleString('en-US') + ' messages' + (tier ? ' · ' + tier.name + ' at ' + tier.min.toLocaleString('en-US') : ' · top tier')
+    : 'Fill from your Discord export to rank up';
+  const rarityBox = h('div', { class: 'f' }, 'Rarity',
+    h('div', { class: 'rarity-read' }, h('b', { text: cleanCard(draft).rarity }), h('span', { class: 'muted small', text: rarityNote })));
+
+  // Tag chips: click to add or remove a suggested tag.
+  const tagInput = h('input', { type: 'text', value: draft.tags.join(', '), oninput: set((v) => { draft.tags = list(v).slice(0, 4); }) });
+  const tagChips = s ? h('div', { class: 'suggest' }, h('span', { class: 'muted small', text: from + ':' }),
+    s.tagOptions.slice(0, 12).map((t) => h('button', {
+      type: 'button', class: 'chip-btn' + (draft.tags.includes(t) ? ' on' : ''), onclick: () => {
+        draft.tags = draft.tags.includes(t) ? draft.tags.filter((x) => x !== t) : [...draft.tags, t].slice(0, 4);
+        rebuild(); repaint();
+      },
+    }, t))) : null;
 
   const identity = h('fieldset', {}, h('legend', {}, 'Identity'),
     h('div', { class: 'grid2' },
@@ -268,52 +293,85 @@ function cardForm(repaint) {
       text('Also known as', draft.aka, (v) => { draft.aka = v; }, { maxlength: 40 })),
     h('div', { class: 'grid2' },
       text('Since', draft.since, (v) => { draft.since = v; }, { maxlength: 24, placeholder: 'Mar 2022' }),
-      h('label', { class: 'f' }, 'Rarity', h('select', { onchange: set((v) => { draft.rarity = v; }) },
-        RARITIES.map((r) => h('option', { value: r, selected: r === draft.rarity }, r))))),
+      rarityBox),
     h('div', { class: 'grid2' },
-      text('Class', draft.className, (v) => { draft.className = v; }, { maxlength: 32 }),
-      text('Tags (comma separated, up to 4)', draft.tags.join(', '), (v) => { draft.tags = list(v).slice(0, 4); })));
+      text('Class', draft.className, (v) => { draft.className = v; }, { maxlength: 32, list: 'dlClass' }),
+      h('label', { class: 'f' }, 'Tags (comma separated, up to 4)', tagInput)),
+    tagChips,
+    datalist('dlClass', s && s.classOptions));
+
+  const emblemChips = s ? h('div', { class: 'suggest' }, h('span', { class: 'muted small', text: 'Your top emojis:' }),
+    s.emblemOptions.map((e) => h('button', {
+      type: 'button', class: 'chip-btn' + (draft.emblem === e ? ' on' : ''), onclick: () => { draft.emblem = e; rebuild(); repaint(); },
+    }, e === 'moon' ? '🌕 moon' : e))) : null;
 
   const look = h('fieldset', {}, h('legend', {}, 'Look'),
     h('div', { class: 'grid2' },
       h('label', { class: 'f' }, 'Theme', h('select', { onchange: set((v) => { draft.theme = v; }) },
-        Object.entries(THEMES).map(([k, t]) => h('option', { value: k, selected: k === draft.theme }, t.label)))),
+        Object.entries(THEMES).map(([k, t]) => h('option', { value: k, selected: k === draft.theme }, t.label + (s && s.theme === k ? ' · matches your messages' : ''))))),
       text('Portrait (an emoji, or "moon")', draft.emblem, (v) => { draft.emblem = v.trim() || 'moon'; }, { maxlength: 8 })),
+    emblemChips,
     h('div', { class: 'row' },
       h('label', { class: 'f' }, 'Accent color', h('input', { type: 'color', value: draft.accent || '#b3202b', oninput: set((v) => { draft.accent = v; }) })),
-      h('button', { class: 'btn ghost small', type: 'button', onclick: (e) => { draft.accent = ''; repaint(); toast('Using the theme’s own color'); } }, 'Use theme color')),
+      h('button', { class: 'btn ghost small', type: 'button', onclick: () => { draft.accent = ''; repaint(); toast('Using the theme’s own color'); } }, 'Use theme color'),
+      s && s.accent ? h('span', { class: 'muted small', text: 'Suggested from the color you mention most.' }) : null),
     h('div', { class: 'grid3' }, [0, 1, 2].map((i) =>
-      text(['Portrait label, top right', 'Portrait label, bottom left', 'Portrait label, bottom right'][i], draft.portraitLabels[i], (v) => { draft.portraitLabels[i] = v; }, { maxlength: 26 }))));
+      text(['Portrait label, top right', 'Portrait label, bottom left', 'Portrait label, bottom right'][i], draft.portraitLabels[i], (v) => { draft.portraitLabels[i] = v; }, { maxlength: 26, list: 'dlStats' }))),
+    datalist('dlStats', s && s.statOptions),
+    s ? h('p', { class: 'muted small', style: 'margin:0', text: 'Click a label or footer field to pick from your stats, or type your own.' }) : null);
 
+  const traitNames = s ? s.traitOptions.map((t) => t.name) : [];
   const traits = h('fieldset', {}, h('legend', {}, 'Traits'),
+    s ? h('p', { class: 'muted small', style: 'margin:0', text: 'Rated from your messages. Pick another trait name from the list to load its rating.' }) : null,
     draft.traits.map((t, i) => {
       const out = h('output', { text: t.value });
-      return h('div', { class: 'trait-row' },
-        h('input', { type: 'text', value: t.name, maxlength: 12, 'aria-label': 'Trait ' + (i + 1) + ' name', oninput: set((v) => { draft.traits[i].name = v; }) }),
-        h('input', { type: 'range', min: 0, max: 10, value: t.value, 'aria-label': (t.name || 'Trait') + ' rating', oninput: set((v) => { draft.traits[i].value = +v; out.textContent = v; }) }),
-        out);
-    }));
+      const range = h('input', { type: 'range', min: 0, max: 10, value: t.value, 'aria-label': (t.name || 'Trait') + ' rating', oninput: set((v) => { draft.traits[i].value = +v; out.textContent = v; }) });
+      const name = h('input', {
+        type: 'text', value: t.name, maxlength: 12, list: 'dlTraits', 'aria-label': 'Trait ' + (i + 1) + ' name', oninput: set((v) => {
+          draft.traits[i].name = v;
+          const known = s && s.traitOptions.find((x) => x.name.toLowerCase() === v.trim().toLowerCase());
+          if (known) { draft.traits[i].value = known.value; range.value = known.value; out.textContent = known.value; }
+        }),
+      });
+      return h('div', { class: 'trait-row' }, name, range, out);
+    }),
+    datalist('dlTraits', traitNames));
 
   const words = h('fieldset', {}, h('legend', {}, 'Quote and catchphrases'),
     area('Quote', draft.quote, (v) => { draft.quote = v; }, { maxlength: 120, rows: 2 }),
     h('div', { class: 'grid2' },
-      text('Quote source', draft.quoteSource, (v) => { draft.quoteSource = v; }, { maxlength: 40 }),
+      text('Quote date or source', draft.quoteSource, (v) => { draft.quoteSource = v; }, { maxlength: 40 }),
       text('Catchphrases (comma separated)', draft.catchphrases.join(', '), (v) => { draft.catchphrases = list(v).slice(0, 6); })));
 
   while (draft.abilities.length < 4) draft.abilities.push({ name: '', kind: '', desc: '' });
+  const abilityOpts = s ? s.abilityOptions : [];
   const abilities = h('fieldset', {}, h('legend', {}, 'Abilities'),
-    draft.abilities.map((a, i) => h('div', { class: 'ability-box' },
-      h('div', { class: 'grid2' },
-        text('Ability ' + (i + 1), a.name, (v) => { draft.abilities[i].name = v; }, { maxlength: 32 }),
-        text('Type (Passive, Active…)', a.kind, (v) => { draft.abilities[i].kind = v; }, { maxlength: 12 })),
-      text('What it does', a.desc, (v) => { draft.abilities[i].desc = v; }, { maxlength: 140 }))));
+    s ? h('p', { class: 'muted small', style: 'margin:0', text: 'Earned from your habits. Pick one from the list to fill it in, or write your own.' }) : null,
+    draft.abilities.map((a, i) => {
+      const kind = h('input', { type: 'text', value: a.kind, maxlength: 12, oninput: set((v) => { draft.abilities[i].kind = v; }) });
+      const desc = h('input', { type: 'text', value: a.desc, maxlength: 140, oninput: set((v) => { draft.abilities[i].desc = v; }) });
+      const name = h('input', {
+        type: 'text', value: a.name, maxlength: 32, list: 'dlAbilities', oninput: set((v) => {
+          draft.abilities[i].name = v;
+          const known = abilityOpts.find((x) => x.name === v);
+          if (known) { Object.assign(draft.abilities[i], known); kind.value = known.kind; desc.value = known.desc; }
+        }),
+      });
+      return h('div', { class: 'ability-box' },
+        h('div', { class: 'grid2' },
+          h('label', { class: 'f' }, 'Ability ' + (i + 1), name),
+          h('label', { class: 'f' }, 'Type (Passive, Active…)', kind)),
+        h('label', { class: 'f' }, 'What it does', desc));
+    }),
+    datalist('dlAbilities', abilityOpts.map((x) => x.name)));
 
   while (draft.weaknesses.length < 3) draft.weaknesses.push('');
   const back = h('fieldset', {}, h('legend', {}, 'Weaknesses and lore'),
-    draft.weaknesses.map((w, i) => text('Weakness ' + (i + 1), w, (v) => { draft.weaknesses[i] = v; }, { maxlength: 90 })),
+    draft.weaknesses.map((w, i) => text('Weakness ' + (i + 1), w, (v) => { draft.weaknesses[i] = v; }, { maxlength: 90, list: 'dlWeak' })),
+    datalist('dlWeak', s && s.weaknessOptions),
     area('Lore', draft.lore, (v) => { draft.lore = v; }, { maxlength: 320, rows: 3 }),
     h('div', { class: 'grid3' }, [0, 1, 2].map((i) =>
-      text('Footer ' + (i + 1), draft.footer[i], (v) => { draft.footer[i] = v; }, { maxlength: 22 }))));
+      text('Footer ' + (i + 1), draft.footer[i], (v) => { draft.footer[i] = v; }, { maxlength: 22, list: 'dlStats' }))));
 
   return h('section', { class: 'panel stack' }, identity, look, traits, words, abilities, back);
 }
@@ -497,7 +555,7 @@ async function boot() {
 
 api.onChange(async () => {
   state.me = await api.me();
-  parsedExport = null; lastStats = null; excluded = new Set();
+  parsedExport = null; lastStats = null; lastSuggest = null; excluded = new Set();
   if (state.me) await refreshPlayers();
   await renderHeader();
   route();

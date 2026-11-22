@@ -171,6 +171,22 @@ legend { font-family: var(--head); font-weight: 700; font-size: 18px; margin-bot
 .quotes { display: grid; gap: 6px; }
 .quotes label { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; color: var(--fg-2); }
 .quotes label:has(input:checked) { border-color: var(--accent); color: var(--fg); }
+.quotes .qdate { display: block; margin-top: 2px; font: 500 11px var(--mono); color: var(--muted); }
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip-btn {
+  font: 500 12.5px var(--body);
+  color: var(--fg-2);
+  background: #100d0e;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.chip-btn:hover { border-color: var(--accent); color: var(--fg); }
+.chip-btn.on { background: var(--accent-2); border-color: var(--accent-2); color: var(--fg); }
+.chip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rarity-read { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 4px; background: #0f0c0d; }
+.rarity-read b { color: var(--fg); font-weight: 600; }
 
 /* ---------- card grids ---------- */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 22px; }

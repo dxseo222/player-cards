@@ -9,13 +9,33 @@ export const THEMES = {
 
 export const RARITIES = ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic'];
 
+// Rarity comes from how many messages the export counted; it can't be picked by hand.
+// Cards made without an export stay Common.
+export const RARITY_TIERS = [
+  { name: 'Mythic', min: 150000 },
+  { name: 'Legendary', min: 75000 },
+  { name: 'Epic', min: 25000 },
+  { name: 'Rare', min: 5000 },
+  { name: 'Common', min: 0 },
+];
+export function rarityFor(count) {
+  const n = Number(count) || 0;
+  return RARITY_TIERS.find((t) => n >= t.min).name;
+}
+export function nextTier(count) {
+  const n = Number(count) || 0;
+  const higher = RARITY_TIERS.filter((t) => t.min > n);
+  return higher.length ? higher[higher.length - 1] : null;
+}
+
 export function blankCard(name = '') {
   return {
     v: 1,
     name: name || 'player',
     aka: '',
     since: '',
-    rarity: 'Legendary',
+    msgCount: 0,
+    rarity: 'Common',
     className: 'Wanderer',
     tags: [],
     traits: [
@@ -46,7 +66,8 @@ export function cleanCard(c) {
     name: s(c.name, 24) || 'player',
     aka: s(c.aka, 40),
     since: s(c.since, 24),
-    rarity: RARITIES.includes(c.rarity) ? c.rarity : b.rarity,
+    msgCount: Math.max(0, Math.min(10_000_000, Math.round(Number(c.msgCount) || 0))),
+    rarity: rarityFor(c.msgCount),
     className: s(c.className, 32),
     tags: arr(c.tags).map((t) => s(t, 24)).filter(Boolean).slice(0, 4),
     traits: arr(c.traits).slice(0, 6).map((t) => ({ name: s(t.name, 12), value: Math.max(0, Math.min(10, Math.round(+t.value || 0))) })),
@@ -119,7 +140,10 @@ export function renderCard(raw, opts = {}) {
   who.append(h('div', 'pc-name', c.name));
   const aka = [c.aka ? 'aka ' + c.aka : '', c.since ? 'since ' + c.since : ''].filter(Boolean).join(' · ');
   if (aka) who.append(h('div', 'pc-aka', aka));
-  top.append(who, h('div', 'pc-rarity', c.rarity));
+  const rarity = h('div', 'pc-rarity', c.rarity);
+  rarity.dataset.rarity = c.rarity.toLowerCase();
+  rarity.title = c.msgCount ? c.msgCount.toLocaleString('en-US') + ' messages' : 'Made without a Discord export';
+  top.append(who, rarity);
   fb.append(top);
 
   const portrait = h('div', 'pc-portrait');

@@ -141,6 +141,12 @@
 }
 .pc[data-theme="requiem"] .pc-rarity { color: var(--pc-fg); background: #8e111b; }
 .pc[data-theme="lilac"] .pc-rarity { background: linear-gradient(90deg, #b8a2ff, #ffa985); }
+/* rarity tiers: Mythic keeps the theme's own badge and glows, the rest get fixed tier colors */
+.pc .pc-rarity[data-rarity="common"] { background: var(--pc-line); color: var(--pc-fg-2); }
+.pc .pc-rarity[data-rarity="rare"] { background: #2f6fb8; color: #fff; }
+.pc .pc-rarity[data-rarity="epic"] { background: #7b4fd6; color: #fff; }
+.pc .pc-rarity[data-rarity="legendary"] { background: #c9971c; color: #1a1205; }
+.pc .pc-rarity[data-rarity="mythic"] { box-shadow: 0 0 14px 1px color-mix(in srgb, var(--pc-accent) 70%, transparent); }
 
 .pc-portrait {
   position: relative;
