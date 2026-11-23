@@ -293,6 +293,9 @@ legend { font-family: var(--head); font-weight: 700; font-size: 18px; margin-bot
 .pc-export .pc-inner { display: flex; gap: 24px; transform: none; transform-style: flat; }
 .pc-export .pc-face { width: 380px; transform: none; backface-visibility: visible; -webkit-backface-visibility: visible; }
 .pc-export, .pc-export * { animation: none !important; transition: none !important; }
+/* the front alone, on a see-through background: the picture the Discord bot shows */
+.pc.pc-export.pc-export-front { --pc-w: 400px; width: 400px; padding: 10px; background: transparent; }
+.pc-export-front .pc-back { display: none; }
 
 /* ---------- goals, wishlist, leaderboard, counters ---------- */
 .goals { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }

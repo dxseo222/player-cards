@@ -91,7 +91,7 @@ test('bot: /card shows your own card, someone else’s, or says why it can’t',
   assert.equal(embed.color, bot.RARITY_COLORS.Legendary);
   assert.equal(embed.url, bot.SITE + '#view-' + CARD + '-v2');
   assert.equal(embed.thumbnail.url, PORTRAIT);
-  assert.ok(embed.fields.some((f) => f.name === 'Traits' && f.value.includes('▰▰▰▰▰▰▰▱▱▱')));
+  assert.ok(embed.fields.some((f) => f.name === 'Traits' && f.value.includes('🟥'.repeat(7) + '⬛'.repeat(3) + ' Chaos')));
   assert.equal(mine.components[0].components[0].url, embed.url, 'Open card button');
 
   const noCard = await bot.commandReply(slash('card', [{ name: 'player', type: 6, value: FRIEND }]), deps);
@@ -106,6 +106,23 @@ test('bot: /card shows your own card, someone else’s, or says why it can’t',
   const rightClick = await bot.commandReply(slash('Player Card', [], { type: 2, target_id: ME }), deps);
   assert.equal(rightClick.embeds[0].title, 'dxseo', 'right-click → Apps → Player Card');
   assert.equal(bot.isEphemeral(slash('card')), false);
+});
+
+test('bot: /card shows the picture of the card when the site has drawn one', async () => {
+  const IMG = 'https://xqinypchsnkoiezpvqyn.supabase.co/storage/v1/object/public/card-images/u/c-v2-abc.webp';
+  const p = player();
+  p.card.image_url = IMG;
+  const r = await bot.commandReply(slash('card'), fakeDeps({ players: { [ME]: p } }));
+  const [embed] = r.embeds;
+  assert.equal(embed.image.url, IMG);
+  assert.equal(embed.fields, undefined, 'the picture already shows traits, tags and the rest');
+  assert.equal(embed.thumbnail, undefined);
+  assert.match(embed.description, /^Legendary · Night Owl · 80,000 messages · version 2$/);
+  assert.match(embed.footer.text, /Traded out 3 times · owned by 2 other players · 4 cards collected/);
+  assert.equal(r.components[0].components[0].url, embed.url);
+
+  p.card.image_url = 'demo://card-images/u/x.webp';
+  assert.ok((await bot.commandReply(slash('card'), fakeDeps({ players: { [ME]: p } }))).embeds[0].fields, 'only real links are used');
 });
 
 test('bot: /collection lists what someone holds', async () => {
@@ -164,6 +181,13 @@ test('bot: feed posts new cards and trades to every server, ten at a time', asyn
   assert.equal(made.url, bot.SITE + '#view-' + CARD + '-v1');
   assert.equal(trade.description, '⇄ **dxseo** traded with **pal\\_\\***');
   assert.deepEqual(trade.fields.map((f) => [f.name, f.value]), [['pal_* got', '**dxseo** · Original 2/2'], ['dxseo got', '**pal** · v3 · Copy #4']]);
+  assert.equal(deps.log.rpc[0][1].p_settle, '20 seconds', 'new cards wait for their picture');
+
+  const IMG = 'https://xqinypchsnkoiezpvqyn.supabase.co/storage/v1/object/public/card-images/u/c-v1-abc.webp';
+  const withPicture = bot.feedEmbeds(claimWith([cardEvent], { versions: { [CARD + ':1']: { name: 'dxseo', msgCount: 160000, imageUrl: IMG } } }));
+  assert.equal(withPicture[0].image.url, IMG);
+  assert.equal(withPicture[0].thumbnail, undefined);
+  assert.equal(withPicture[0].description, '✦ **dxseo** made their card\nMythic');
 });
 
 test('bot: feed registers commands once, drops deleted webhooks, and needs the key', async () => {

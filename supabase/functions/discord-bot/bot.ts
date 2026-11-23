@@ -61,9 +61,10 @@ export function editionLabel(item) {
 const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/\S+$/.test(u) && u.length < 1000 ? u : undefined);
 const num = (n) => Math.max(0, Math.round(Number(n) || 0)).toLocaleString('en-US');
 const plural = (n, one, many) => num(n) + ' ' + (Number(n) === 1 ? one : many);
-const bar = (v) => {
+// Coloured squares read clearly in Discord's font (▰ and ▱ look almost the same).
+export const bar = (v) => {
   const n = Math.max(0, Math.min(10, Math.round(Number(v) || 0)));
-  return '▰'.repeat(n) + '▱'.repeat(10 - n);
+  return '🟥'.repeat(n) + '⬛'.repeat(10 - n);
 };
 const rarityLine = (d) => {
   const rarity = rarityFor(d && d.msgCount);
@@ -79,6 +80,27 @@ export function cardMessage(p) {
   if (p.card.hidden || !p.card.data) return { content: '**' + name + '**’s card is hidden by a moderator.' };
   const d = p.card.data;
   const rarity = rarityFor(d.msgCount);
+  const url = shareUrl(p.card.id, p.card.version);
+  const author = { name: cut(p.player.username, 80), icon_url: httpsUrl(p.player.avatar_url) };
+  const counts = 'Traded out ' + plural(p.card.traded_out, 'time', 'times') + ' · owned by ' + plural(p.card.owners, 'other player', 'other players')
+    + ' · ' + plural(p.held, 'card', 'cards') + ' collected';
+
+  // The picture of the card, drawn by the site, when there is one: it says everything the text would.
+  if (httpsUrl(p.card.image_url)) {
+    return {
+      embeds: [{
+        author,
+        title: cut(String(d.name || '').trim() || 'player', 100),
+        url,
+        color: RARITY_COLORS[rarity],
+        description: rarityLine(d) + ' · ' + num(d.msgCount) + ' messages' + (p.card.version > 1 ? ' · version ' + p.card.version : ''),
+        image: { url: p.card.image_url },
+        footer: { text: counts },
+      }],
+      components: [linkButton('Open card', url)],
+    };
+  }
+
   const lines = [];
   if (d.aka) lines.push('*' + text(d.aka, 80) + '*');
   if (d.quote) lines.push('> “' + text(d.quote, 200) + '”' + (d.quoteSource ? ' — ' + text(d.quoteSource, 60) : ''));
@@ -90,16 +112,15 @@ export function cardMessage(p) {
     { name: 'Rarity', value: rarityLine(d), inline: true },
     { name: 'Messages', value: num(d.msgCount), inline: true },
     { name: 'Version', value: 'v' + p.card.version, inline: true },
-    traits.length ? { name: 'Traits', value: traits.map((t) => '`' + bar(t.value) + '` ' + text(t.name, 16)).join('\n') } : null,
+    traits.length ? { name: 'Traits', value: traits.map((t) => bar(t.value) + ' ' + text(t.name, 16)).join('\n') } : null,
     tags.length ? { name: 'Tags', value: tags.join(' · ') } : null,
     { name: 'Traded out', value: plural(p.card.traded_out, 'time', 'times'), inline: true },
     { name: 'Owned by', value: plural(p.card.owners, 'other player', 'other players'), inline: true },
     { name: 'Collection', value: plural(p.held, 'card', 'cards'), inline: true },
   ].filter(Boolean);
-  const url = shareUrl(p.card.id, p.card.version);
   return {
     embeds: [{
-      author: { name: cut(p.player.username, 80), icon_url: httpsUrl(p.player.avatar_url) },
+      author,
       title: cut(String(d.name || '').trim() || 'player', 100),
       url,
       color: RARITY_COLORS[rarity],
@@ -153,13 +174,16 @@ export function feedEmbeds(claim) {
     }
     const d = versions[e.card_id + ':' + e.version] || {};
     const rarity = rarityFor(d.msgCount);
+    const picture = httpsUrl(d.imageUrl);
     return {
       color: RARITY_COLORS[rarity],
-      description: e.kind === 'card' ? '✦ **' + who(e.actor) + '** made their card' : '⟳ **' + who(e.actor) + '** updated their card to version ' + e.version,
+      description: (e.kind === 'card' ? '✦ **' + who(e.actor) + '** made their card' : '⟳ **' + who(e.actor) + '** updated their card to version ' + e.version)
+        + (picture ? '\n' + rarityLine(d) : ''),
       title: cut(String(d.name || '').trim() || 'player', 100),
       url: shareUrl(e.card_id, e.version),
-      fields: [{ name: 'Rarity', value: rarityLine(d), inline: true }],
-      thumbnail: httpsUrl(d.portraitUrl) ? { url: d.portraitUrl } : undefined,
+      fields: picture ? [] : [{ name: 'Rarity', value: rarityLine(d), inline: true }],
+      image: picture ? { url: picture } : undefined,
+      thumbnail: !picture && httpsUrl(d.portraitUrl) ? { url: d.portraitUrl } : undefined,
       timestamp: e.happened_at,
     };
   });
@@ -185,7 +209,8 @@ export function chunkEmbeds(embeds, maxCount = 10, maxChars = 5500) {
 // deps: rpc(name, args), discord(method, path, body) → { ok, status, body }, appId,
 //       channels(), postWebhook(channel, message) → 'ok' | 'gone', removeChannel(guildId), setCommandsVersion(v)
 export async function runFeed(key, deps) {
-  const claim = await deps.rpc('bot_claim_feed', { p_key: key });
+  // New cards wait 20 seconds before posting, so the picture the site draws right after saving is ready.
+  const claim = await deps.rpc('bot_claim_feed', { p_key: key, p_settle: '20 seconds' });
   let registered = false;
   if (claim.commands_version !== COMMANDS_VERSION && deps.appId) {
     const r = await deps.discord('PUT', '/applications/' + deps.appId + '/commands', COMMANDS);

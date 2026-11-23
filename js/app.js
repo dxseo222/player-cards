@@ -1,10 +1,10 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v11';
-import { renderCard, blankCard, cleanCard, editionLabel, THEMES, NAME_FONTS, FRAMES, FINISHES, COLOR_KEYS, THEME_COLORS, nextTier, clip } from './card.js?v11';
-import { parseExport, sources, computeStats, suggest } from './export.js?v11';
-import { buildWorld, playerStats, badgesFor, leaderboards, BADGES } from './goals.js?v11';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v12';
+import { renderCard, blankCard, cleanCard, editionLabel, THEMES, NAME_FONTS, FRAMES, FINISHES, COLOR_KEYS, THEME_COLORS, nextTier, clip } from './card.js?v12';
+import { parseExport, sources, computeStats, suggest } from './export.js?v12';
+import { buildWorld, playerStats, badgesFor, leaderboards, BADGES } from './goals.js?v12';
 
 const live = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-const { api } = live ? await import('./api-supabase.js?v11') : await import('./api-local.js?v11');
+const { api } = live ? await import('./api-supabase.js?v12') : await import('./api-local.js?v12');
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -191,6 +191,7 @@ function saveBar(mine, traded, version) {
         e.target.disabled = true;
         try {
           await attempt(() => api.saveCard(cleanCard(draft)), done);
+          syncCardImage();
           await refreshPlayers();
           if (!mine || traded) renderMyCard();
         } finally { e.target.disabled = false; }
@@ -1177,21 +1178,31 @@ async function renderView({ cardId, version }) {
     h('div', { class: 'share' }, renderCard(data, { item: { edition: 'original', serial: 1, version: v.version } }), actions));
 }
 
+// Draws a card into a canvas, off screen. Both sides side by side, or just the front.
+async function drawCard(data, { frontOnly = false } = {}) {
+  const { toCanvas } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
+  const stage = h('div', { class: 'png-stage' });
+  stage.append(renderCard(data, { flippable: false, item: null }));
+  stage.firstChild.classList.add('pc-export');
+  if (frontOnly) stage.firstChild.classList.add('pc-export-front');
+  document.body.append(stage);
+  try {
+    await document.fonts.ready;
+    const imgs = [...stage.querySelectorAll('img')];
+    await Promise.all(imgs.map((i) => (i.complete ? null : new Promise((r) => { i.onload = r; i.onerror = r; }))));
+    return await toCanvas(stage.firstChild, { pixelRatio: 2, backgroundColor: frontOnly ? undefined : '#0b090a', cacheBust: true });
+  } finally {
+    stage.remove();
+  }
+}
+
 // Draws both sides of the card side by side into a PNG.
 async function downloadPng(data, version, btn) {
   btn.disabled = true;
   const old = btn.textContent;
   btn.textContent = 'Making image…';
-  const stage = h('div', { class: 'png-stage' });
   try {
-    const { toPng } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
-    stage.append(renderCard(data, { flippable: false, item: null }));
-    stage.firstChild.classList.add('pc-export');
-    document.body.append(stage);
-    await document.fonts.ready;
-    const imgs = [...stage.querySelectorAll('img')];
-    await Promise.all(imgs.map((i) => (i.complete ? null : new Promise((r) => { i.onload = r; i.onerror = r; }))));
-    const url = await toPng(stage.firstChild, { pixelRatio: 2, backgroundColor: '#0b090a', cacheBust: true });
+    const url = (await drawCard(data)).toDataURL('image/png');
     const a = h('a', { href: url, download: (data.name || 'card').replace(/[^\w-]+/g, '_') + (version > 1 ? '-v' + version : '') + '.png' });
     document.body.append(a);
     a.click();
@@ -1200,10 +1211,48 @@ async function downloadPng(data, version, btn) {
   } catch (e) {
     toast('Couldn’t make the image: ' + (e.message || e), true);
   } finally {
-    stage.remove();
     btn.disabled = false;
     btn.textContent = old;
   }
+}
+
+// ---------------------------------------------------------------- card pictures for Discord
+
+// Your browser draws the front of your card and uploads it, so the Discord bot can show the card
+// itself. The file name carries a fingerprint of the card's text, so an out-of-date picture is
+// spotted and redrawn. Bump IMAGE_REV when the card's look changes, to redraw everyone's picture.
+const IMAGE_REV = 1;
+async function cardImageName(cardId, version, data) {
+  const bytes = new TextEncoder().encode(IMAGE_REV + ':' + JSON.stringify(cleanCard(data)));
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return cardId + '-v' + version + '-' + hash;
+}
+
+let imageSync = null;
+function syncCardImage() {
+  if (!api.uploadCardImage || !state.me) return Promise.resolve();
+  // one at a time; a save during a sync gets its own run afterwards
+  imageSync = (imageSync || Promise.resolve()).then(async () => {
+    try {
+      const card = await api.myCard();
+      if (!card || card.hidden) return;
+      const versions = await api.cardVersions(card.id);
+      const v = versions.find((x) => x.version === card.current_version);
+      if (!v) return;
+      const name = await cardImageName(card.id, v.version, v.data);
+      if (v.image_url && v.image_url.includes('/' + name + '.')) return;
+      const canvas = await drawCard(v.data, { frontOnly: true });
+      let blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.9));
+      if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+      const url = await api.uploadCardImage(blob, name + (blob.type === 'image/webp' ? '.webp' : '.png'));
+      await api.setCardImage(v.version, url);
+      // pictures no version uses anymore are deleted
+      await api.pruneCardImages(versions.map((x) => (x.version === v.version ? url : x.image_url)).filter(Boolean));
+    } catch (e) {
+      console.warn('Card picture not updated:', e.message || e);
+    }
+  });
+  return imageSync;
 }
 
 // ---------------------------------------------------------------- moderation
@@ -1281,7 +1330,7 @@ async function boot() {
   await renderHeader();
   if (state.me) startTradeWatch();
   await route();
-  if (state.me) checkNewCards().catch(() => {});
+  if (state.me) { checkNewCards().catch(() => {}); syncCardImage(); }
 }
 
 api.onChange(async () => {
@@ -1291,7 +1340,7 @@ api.onChange(async () => {
   if (state.me) { await refreshPlayers(); startTradeWatch(); }
   await renderHeader();
   await route();
-  if (state.me) checkNewCards().catch(() => {});
+  if (state.me) { checkNewCards().catch(() => {}); syncCardImage(); }
 });
 window.addEventListener('hashchange', route);
 boot();

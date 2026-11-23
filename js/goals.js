@@ -1,7 +1,7 @@
 // Badges and leaderboard, worked out from data everyone signed in can already read:
 // who owns which item, each card's versions, and wishlists. Nothing here is stored.
 
-import { rarityFor } from './card.js?v11';
+import { rarityFor } from './card.js?v12';
 
 const RARITY_WEIGHT = { Common: 1, Rare: 1.5, Epic: 2, Legendary: 3, Mythic: 4 };
 

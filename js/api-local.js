@@ -3,7 +3,7 @@
 // (cards, versions, originals/copies, trades, moderation) can be tried locally.
 // The rules here mirror supabase/*.sql.
 
-import { blankCard } from './card.js?v11';
+import { blankCard } from './card.js?v12';
 
 const KEY = 'player-cards-demo-v2';
 let memory = null;
@@ -109,7 +109,7 @@ export const api = {
       s.versions.push(nv);
       s.items.push({ id: uid(), card_id: c.id, version_id: nv.id, owner_id: s.current, edition: 'original', serial: 1 });
       c.current_version = next;
-    } else v.data = data;
+    } else { v.data = data; delete v.image_url; }
     c.data = data;
     save();
     return c.id;
@@ -133,6 +133,17 @@ export const api = {
     });
   },
   async removePortrait() { },
+  // Demo mode has no storage: card pictures are drawn but only their name is kept.
+  async uploadCardImage(blob, name) { return 'demo://card-images/' + load().current + '/' + name; },
+  async setCardImage(version, url) {
+    const s = load();
+    const c = s.cards.find((x) => x.creator_id === s.current);
+    const v = c && s.versions.find((x) => x.card_id === c.id && x.version === version);
+    if (!v) throw new Error('That version doesn’t exist');
+    v.image_url = url;
+    save();
+  },
+  async pruneCardImages() { },
   async items(ownerId) { return clone(load().items.filter((i) => i.owner_id === ownerId)); },
   async itemsByIds(ids) { return clone(load().items.filter((i) => ids.includes(i.id))); },
   async trades() {
@@ -250,7 +261,7 @@ export const api = {
     const s = load(); requireAdmin(s);
     const c = s.cards.find((x) => x.id === card.id);
     delete c.data.portraitUrl;
-    s.versions.filter((v) => v.card_id === c.id).forEach((v) => { delete v.data.portraitUrl; });
+    s.versions.filter((v) => v.card_id === c.id).forEach((v) => { delete v.data.portraitUrl; delete v.image_url; });
     save();
   },
   async adminResolve(reportId) { const s = load(); requireAdmin(s); s.reports.find((r) => r.id === reportId).status = 'resolved'; save(); },

@@ -113,3 +113,58 @@ test('bot: /card finds a player by Discord account, with counts and their collec
   const bobNow = (await asBot(db, () => q(db, 'select public.bot_player($1) r', [DISCORD[B]])))[0].r;
   assert.deepEqual(bobNow.items.map((i) => i.name), ['bob'], 'hidden cards leave collections too');
 });
+
+const IMG = (uid, name = 'card-v1-abc.webp') => 'https://xqinypchsnkoiezpvqyn.supabase.co/storage/v1/object/public/card-images/' + uid + '/' + name;
+const setImage = (db, uid, version, url) => as(db, uid, () => q(db, 'select public.set_card_image($1, $2)', [version, url]));
+const imageOf = async (db, uid, version) => (await q(db, `select v.image_url from public.card_versions v join public.cards c on c.id = v.card_id
+  where c.creator_id = $1 and v.version = $2`, [uid, version]))[0].image_url;
+
+test('card pictures: only your own card, only your own folder, never stale', async () => {
+  const db = await world();
+  await setImage(db, A, 1, IMG(A));
+  assert.equal(await imageOf(db, A, 1), IMG(A));
+
+  await rejects(setImage(db, A, 1, IMG(B)), /isn't allowed/, 'not someone else’s folder');
+  await rejects(setImage(db, A, 1, 'https://evil.example/card.webp'), /isn't allowed/);
+  await rejects(setImage(db, A, 1, IMG(A, '../x.webp').replace('/x.webp', '/x.svg')), /isn't allowed/);
+  await rejects(setImage(db, A, 7, IMG(A)), /doesn't exist/);
+  await rejects(setImage(db, C, 1, IMG(C)), /Make your card first/);
+  await rejects(as(db, null, () => q(db, 'select public.set_card_image(1, null)')), /permission denied/);
+  await rejects(as(db, A, () => q(db, `update public.card_versions set image_url = 'x'`)), /permission denied/);
+
+  // editing an untraded card clears its picture
+  await as(db, A, () => q(db, `select public.save_card('{"name":"alice edited"}')`));
+  assert.equal(await imageOf(db, A, 1), null, 'an edit makes the old picture wrong');
+
+  // a traded version keeps its picture when the next version starts
+  await setImage(db, A, 1, IMG(A));
+  await accept(db, B, await propose(db, A, B, { offerMint: true }));
+  await as(db, A, () => q(db, `select public.save_card('{"name":"alice v2"}')`));
+  assert.equal(await imageOf(db, A, 1), IMG(A));
+  assert.equal(await imageOf(db, A, 2), null);
+
+  // a moderator removing the portrait clears the picture too
+  await q(db, `update public.card_versions set data = data || '{"portraitUrl":"https://x.supabase.co/storage/v1/object/public/portraits/a/p.webp"}'
+    where version = 2 and card_id = (select id from public.cards where creator_id = $1)`, [A]);
+  await setImage(db, A, 2, IMG(A, 'card-v2-def.webp'));
+  await q(db, 'update public.profiles set is_admin = true where id = $1', [C]);
+  const aliceId = (await cardOf(db, A)).id;
+  await as(db, C, () => q(db, 'select public.admin_remove_portrait($1)', [aliceId]));
+  assert.equal(await imageOf(db, A, 2), null);
+  assert.ok((await q(db, `select 1 from storage.buckets where id = 'card-images' and public`)).length, 'the bucket exists');
+});
+
+test('card pictures: the bot shows them in /card and the feed, but not for hidden cards', async () => {
+  const db = await world();
+  const key = await feedKey(db);
+  await setImage(db, A, 1, IMG(A));
+  const alice = (await asBot(db, () => q(db, 'select public.bot_player($1) r', [DISCORD[A]])))[0].r;
+  assert.equal(alice.card.image_url, IMG(A));
+  const feed = await claim(db, key);
+  const aliceCard = (await cardOf(db, A)).id;
+  assert.equal(feed.versions[aliceCard + ':1'].imageUrl, IMG(A));
+
+  await q(db, 'update public.cards set hidden = true where creator_id = $1', [A]);
+  const hidden = (await asBot(db, () => q(db, 'select public.bot_player($1) r', [DISCORD[A]])))[0].r;
+  assert.equal(hidden.card.image_url, null);
+});

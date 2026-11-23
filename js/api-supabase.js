@@ -2,7 +2,7 @@
 // supabase/*.sql, so they can't be bypassed from the browser.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v11';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v12';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const listeners = new Set();
@@ -19,6 +19,9 @@ function check({ data, error }) {
     }
     if (/activity_feed/.test(error.message || '')) {
       throw new Error('The database needs an update. Run supabase/006_activity.sql in Supabase.');
+    }
+    if (/set_card_image|card-images/.test(error.message || '')) {
+      throw new Error('The database needs an update. Run supabase/009_card_images.sql in Supabase.');
     }
     throw new Error(error.message || 'Something went wrong talking to the server');
   }
@@ -103,6 +106,21 @@ export const api = {
     }
     return sb.storage.from('portraits').getPublicUrl(path).data.publicUrl;
   },
+  // Pictures of your card for the Discord bot, in the public "card-images" bucket, your own folder.
+  async uploadCardImage(blob, name) {
+    const path = session.user.id + '/' + name;
+    const { error } = await sb.storage.from('card-images').upload(path, blob, { contentType: blob.type, cacheControl: '31536000', upsert: true });
+    if (error) throw new Error(/bucket not found/i.test(error.message) ? 'Run supabase/009_card_images.sql in Supabase.' : error.message || 'Upload failed');
+    return sb.storage.from('card-images').getPublicUrl(path).data.publicUrl;
+  },
+  async setCardImage(version, url) { check(await sb.rpc('set_card_image', { p_version: version, p_url: url })); },
+  async pruneCardImages(keepUrls) {
+    const files = check(await sb.storage.from('card-images').list(session.user.id, { limit: 100 }));
+    const old = files.map((f) => session.user.id + '/' + f.name)
+      .filter((path) => !keepUrls.some((u) => decodeURIComponent(u).endsWith('/card-images/' + path)));
+    if (old.length) await sb.storage.from('card-images').remove(old);
+  },
+
   // Old versions may still show a picture, so only pictures no version uses are deleted.
   async removePortrait(url) {
     const marker = '/storage/v1/object/public/portraits/';

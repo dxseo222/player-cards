@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SQL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'supabase');
-export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql', '007_bot.sql'];
+export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql', '007_bot.sql', '009_card_images.sql'];
 // 008_bot_schedule.sql needs Supabase's pg_cron and pg_net, so it only runs on the real database.
 
 const SUPABASE_STUBS = `
