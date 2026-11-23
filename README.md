@@ -60,6 +60,7 @@ Send friends the link. They sign in with Discord, make a card, and show up under
 A Player Cards bot for your server, separate from any other bot you run. It lives on Supabase as an
 Edge Function, so there's no server to keep on.
 
+- `/help` explains the basics and tells you what to do next (sign in, make your card, trade). Anyone who isn't set up yet gets the same nudge, with a button to the site, whenever they use a command.
 - `/card [player]` shows someone's card (yours if you leave it empty) as a picture of the card itself. Right-click a user → **Apps → Player Card** does the same.
 - `/collection [player]` lists the cards someone has collected.
 - `/trade @player` opens a private menu: pick what you give and what you want (a new edition of either card, or cards you hold), add a note if you like, and send. The other player gets pinged in the channel with a **View offer** button that only works for them; the offer itself is never shown to anyone else. They can **Accept**, **Decline** or **Counter**, and you can **Cancel** while it's open. Accepting pings you back.

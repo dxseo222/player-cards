@@ -2,18 +2,20 @@
 // Player Cards Discord bot: everything that doesn't talk to the network itself, so the tests
 // (tests/bot.test.js) can run it with fake Discord and database calls.
 //
-// Commands:  /card [player]   /collection [player]   right-click a user → Apps → Player Card
+// Commands:  /help
+//            /card [player]   /collection [player]   right-click a user → Apps → Player Card
 //            /trade @player   /trades   (trading lives in trades.ts)
 //            /feed here   /feed off   (Manage Server only: where new cards and trades are posted)
 
 export const SITE = 'https://dxseo222.github.io/player-cards/';
 
 // Bump this whenever COMMANDS changes; the next feed run re-registers them with Discord.
-export const COMMANDS_VERSION = 2;
+export const COMMANDS_VERSION = 3;
 
 const PLAYER_OPTION = { type: 6, name: 'player', description: 'Whose (leave empty for yours)', required: false };
 const GUILD_ONLY = { contexts: [0], integration_types: [0] };
 export const COMMANDS = [
+  { name: 'help', type: 1, description: 'How Player Cards works, and what to do next', ...GUILD_ONLY },
   { name: 'card', type: 1, description: 'Show a Player Card', options: [PLAYER_OPTION], ...GUILD_ONLY },
   { name: 'collection', type: 1, description: 'Show the Player Cards someone has collected', options: [PLAYER_OPTION], ...GUILD_ONLY },
   { name: 'Player Card', type: 2, ...GUILD_ONLY },
@@ -76,13 +78,60 @@ const rarityLine = (d) => {
   const rarity = rarityFor(d && d.msgCount);
   return d && d.className ? rarity + ' · ' + text(d.className, 40) : rarity;
 };
-const linkButton = (label, url) => ({ type: 1, components: [{ type: 2, style: 5, label, url }] });
+export const linkButton = (label, url) => ({ type: 1, components: [{ type: 2, style: 5, label, url }] });
+
+// ---------------------------------------------------------------- getting started
+
+// What to tell someone who isn't set up yet, with a button straight to the right page.
+export const notSignedIn = () => ({
+  content: 'You’re not on Player Cards yet. Open the site, sign in with Discord and make your card. It takes a couple of minutes, and you can fill it in from your Discord data.',
+  components: [linkButton('Make your card', SITE + '#card')],
+});
+export const noCardYet = () => ({
+  content: 'You haven’t made your card yet. Make it on the site, then it can be shown, collected and traded.',
+  components: [linkButton('Make your card', SITE + '#card')],
+});
+export const otherNotSignedIn = (name) => ({
+  content: '**' + text(name, 60) + '** isn’t on Player Cards yet. Send them the site so they can make a card: ' + SITE,
+});
+
+const STEP = ['1. Open the site and sign in with Discord.', '2. Make your card. You can fill it in from your Discord data export.', '3. Collect your friends’ cards by trading, here or on the site.'];
+
+// p: bot_player for the person asking (null if they've never signed in).
+export function helpMessage(p) {
+  let status;
+  if (!p) status = '**Where you are:** not signed in yet. Start with step 1.';
+  else if (!p.card) status = '**Where you are:** signed in, no card yet. Step 2 is next.';
+  else if (p.card.hidden) status = '**Where you are:** your card is hidden by a moderator.';
+  else {
+    status = '**Where you are:** your card **' + text((p.card.data && p.card.data.name) || 'player', 40) + '** is ready. You hold '
+      + plural(p.held, 'card', 'cards') + (p.collected ? ' from ' + plural(p.collected, 'other player', 'other players') : '') + '.'
+      + (p.collected ? '' : ' Try `/trade` with a friend.');
+  }
+  return {
+    embeds: [{
+      title: 'Player Cards',
+      color: RARITY_COLORS.Mythic,
+      description: 'Make a trading card from your Discord messages, then collect and trade your friends’ cards.\n\n' + status,
+      fields: [
+        { name: 'Getting started', value: STEP.join('\n') },
+        { name: 'Cards', value: '`/card [player]` shows a card (yours if you leave it empty)\nRight-click someone → **Apps → Player Card** does the same\n`/collection [player]` shows the cards someone has collected' },
+        { name: 'Trading', value: '`/trade @player` picks what you give and what you want, then sends the offer\n`/trades` shows your offers waiting for an answer\nThey get a ping with a button only they can open, to accept, decline or counter.' },
+        { name: 'How cards work', value: 'Every card has two originals. **Original 1/2** always stays with its maker. The maker’s first trade hands out **Original 2/2**, then numbered copies. Rarity comes from how many messages you’ve sent.' },
+        { name: 'For server admins', value: '`/feed here` posts new cards and finished trades in a channel. `/feed off` stops it.' },
+      ],
+      footer: { text: 'Only you can see this.' },
+    }],
+    components: [linkButton(p && p.card ? 'Open Player Cards' : 'Make your card', SITE + (p && p.card ? '' : '#card'))],
+  };
+}
 
 // ---------------------------------------------------------------- /card and /collection
 
-export function cardMessage(p) {
+export function cardMessage(p, self = false) {
   const name = text(p.player.username, 60);
-  if (!p.card) return { content: '**' + name + '** signed in but hasn’t made a card yet. Make one at ' + SITE };
+  if (!p.card && self) return noCardYet();
+  if (!p.card) return { content: '**' + name + '** signed in but hasn’t made a card yet.' };
   if (p.card.hidden || !p.card.data) return { content: '**' + name + '**’s card is hidden by a moderator.' };
   const d = p.card.data;
   const rarity = rarityFor(d.msgCount);
@@ -139,9 +188,10 @@ export function cardMessage(p) {
   };
 }
 
-export function collectionMessage(p) {
+export function collectionMessage(p, self = false) {
   const name = text(p.player.username, 60);
   const items = Array.isArray(p.items) ? p.items : [];
+  if (!items.length && self) return p.card ? { content: 'You haven’t collected any cards yet. Trade with a friend using `/trade`.' } : noCardYet();
   if (!items.length) return { content: '**' + name + '** hasn’t collected any cards yet.' };
   const SHOW = 20;
   const lines = items.slice(0, SHOW).map((i) => '**' + text(i.name || 'player', 32) + '** · ' + editionLabel(i)
@@ -257,8 +307,8 @@ export async function verifyDiscord(publicKeyHex, signatureHex, timestamp, body,
   }
 }
 
-// Only the person who ran /feed, /trade or /trades sees the reply.
-export const isEphemeral = (i) => !!i.data && ['feed', 'trade', 'trades'].includes(i.data.name);
+// Only the person who ran /help, /feed, /trade or /trades sees the reply.
+export const isEphemeral = (i) => !!i.data && ['help', 'feed', 'trade', 'trades'].includes(i.data.name);
 
 const userName = (u) => (u && (u.global_name || u.username)) || 'That player';
 
@@ -267,6 +317,7 @@ export async function commandReply(i, deps) {
   const d = i.data || {};
 
   if (d.name === 'feed') return feedCommand(i, d, invoker, deps);
+  if (d.name === 'help') return helpMessage(await deps.rpc('bot_player', { p_discord_id: String(invoker.id) }));
 
   let targetId = invoker.id;
   if (d.type === 2) targetId = d.target_id;
@@ -275,14 +326,10 @@ export async function commandReply(i, deps) {
     if (opt) targetId = opt.value;
   }
   const resolved = (d.resolved && d.resolved.users && d.resolved.users[targetId]) || (targetId === invoker.id ? invoker : null);
+  const self = String(targetId) === String(invoker.id);
   const p = await deps.rpc('bot_player', { p_discord_id: String(targetId) });
-  if (!p) {
-    return {
-      content: (targetId === invoker.id ? 'You’re' : '**' + text(userName(resolved), 60) + '** is')
-        + ' not on Player Cards yet. Sign in with Discord and make a card at ' + SITE,
-    };
-  }
-  return d.name === 'collection' ? collectionMessage(p) : cardMessage(p);
+  if (!p) return self ? notSignedIn() : otherNotSignedIn(userName(resolved));
+  return d.name === 'collection' ? collectionMessage(p, self) : cardMessage(p, self);
 }
 
 async function feedCommand(i, d, invoker, deps) {

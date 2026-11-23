@@ -28,7 +28,7 @@ const view = (over = {}) => ({
   ...over,
 });
 
-function fakeDeps({ opts = options(), tradeView = view(), sendError = null, actionResult = 'accepted' } = {}) {
+function fakeDeps({ opts = options(), tradeView = view(), sendError = null, actionResult = 'accepted', optionsError = null, signedIn = true } = {}) {
   const drafts = new Map();
   const log = { rpc: [] };
   return {
@@ -36,7 +36,11 @@ function fakeDeps({ opts = options(), tradeView = view(), sendError = null, acti
     drafts,
     async rpc(name, args) {
       log.rpc.push([name, args]);
-      if (name === 'bot_trade_options') return opts;
+      if (name === 'bot_trade_options') {
+        if (optionsError) throw new Error(optionsError);
+        return opts;
+      }
+      if (name === 'bot_player') return signedIn ? { player: { id: 'u-me', username: 'dxseo' } } : null;
       if (name === 'bot_trade_view') return tradeView;
       if (name === 'bot_open_trades') return [{ id: TRADE, incoming: true, other: 'dxseo', gives: 1, gets: 1, created_at: new Date().toISOString() }];
       if (name === 'bot_trade') {
@@ -174,6 +178,25 @@ test('trades: /trades lists open offers with a menu to open one', async () => {
   assert.equal(opened.edit.embeds[0].title, 'Trade offer from dxseo');
   const none = t.listMessage([]);
   assert.match(none.content, /no open trade offers/);
+});
+
+test('trades: people who aren’t set up yet are told what to do', async () => {
+  const me = await t.tradeCommand(slash('trade', [{ name: 'player', type: 6, value: PAL }]), fakeDeps({ optionsError: 'Sign in on the Player Cards site with this Discord account first' }));
+  assert.match(me.content, /^You’re not on Player Cards yet/);
+  assert.equal(me.components[0].components[0].label, 'Make your card');
+
+  const i = slash('trade', [{ name: 'player', type: 6, value: PAL }]);
+  i.data.resolved = { users: { [PAL]: { id: PAL, username: 'pal', global_name: 'Pal' } } };
+  const them = await t.tradeCommand(i, fakeDeps({ optionsError: "That player isn't on Player Cards yet" }));
+  assert.match(them.content, /^\*\*Pal\*\* isn’t on Player Cards yet\. Send them the site/);
+
+  const list = await t.tradeCommand(slash('trades'), fakeDeps({ signedIn: false }));
+  assert.match(list.content, /^You’re not on Player Cards yet/);
+
+  // no card yet: they can still ask for the other card, and get a button to make theirs
+  const builder = t.builderMessage({ id: DRAFT, offer_items: [], offer_mint: false, request_items: [], request_mint: false, message: null }, options({ my_mint: null, mine: [] }));
+  assert.match(builder.embeds[0].description, /haven’t made your card yet.*You can still ask for theirs/);
+  assert.deepEqual(builder.components.at(-1).components.map((b) => b.label), ['Send offer', 'Add note', 'Cancel', 'Make your card']);
 });
 
 test('trades: every message fits Discord’s limits', async () => {

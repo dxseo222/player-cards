@@ -8,7 +8,7 @@
 // The trade rules live in the database (supabase/010_bot_trades.sql calls the site's own trade
 // functions), so a trade made here is checked exactly like one made on the site.
 
-import { SITE, cut, text, editionLabel, TRADE_COLOR } from './bot.ts';
+import { SITE, cut, text, editionLabel, TRADE_COLOR, notSignedIn, otherNotSignedIn } from './bot.ts';
 
 const MAX_OPTIONS = 25; // Discord's limit per menu
 const MAX_PER_SIDE = 20; // the site's limit per side of a trade
@@ -73,7 +73,9 @@ export function builderMessage(d, o, notice) {
   const giveMenu = menu('td:' + d.id + ':give', 'Cards you give', o.my_mint, 'New edition of your card', o.mine, d.offer_mint, d.offer_items);
   const wantMenu = menu('td:' + d.id + ':want', 'Cards you want from ' + cut(them, 60), o.their_mint, 'New edition of ' + cut(them, 40) + '’s card', o.theirs, d.request_mint, d.request_items);
   const hints = [];
-  if (!giveMenu.select) hints.push('You have nothing to give yet. Make your card on the site first.');
+  if (!giveMenu.select) hints.push(o.my_mint === null
+    ? 'You haven’t made your card yet, so you have nothing to give. You can still ask for theirs, or make your card on the site first.'
+    : 'You have nothing to give yet.');
   if (!wantMenu.select) hints.push('**' + text(them, 40) + '** has nothing to trade yet.');
   if (giveMenu.hidden || wantMenu.hidden) hints.push('Some cards didn’t fit in the menus (25 at most). Use the site for those.');
 
@@ -83,7 +85,8 @@ export function builderMessage(d, o, notice) {
   rows.push(row(
     button(d.counter_of ? 'Send counter-offer' : 'Send offer', 'td:' + d.id + ':send', 1, empty),
     button(d.message ? 'Edit note' : 'Add note', 'td:' + d.id + ':note'),
-    button('Cancel', 'td:' + d.id + ':cancel', 4)));
+    button('Cancel', 'td:' + d.id + ':cancel', 4),
+    ...(o.my_mint === null ? [linkTo('Make your card', SITE + '#card')] : [])));
 
   return {
     content: notice ? '⚠️ ' + cut(notice, 300) : '',
@@ -220,7 +223,13 @@ export async function tradeCommand(i, deps) {
   const me = userId(i);
   const d = i.data || {};
   if (!i.guild_id) return { content: 'Use this in a server channel.' };
-  if (d.name === 'trades') return listMessage(await deps.rpc('bot_open_trades', { p_discord_id: me }) || []);
+  if (d.name === 'trades') {
+    const [player, list] = await Promise.all([
+      deps.rpc('bot_player', { p_discord_id: me }),
+      deps.rpc('bot_open_trades', { p_discord_id: me }),
+    ]);
+    return player ? listMessage(list || []) : notSignedIn();
+  }
 
   const target = String(((d.options || []).find((o) => o.name === 'player') || {}).value || '');
   if (!target) return { content: 'Pick who to trade with.' };
@@ -228,7 +237,12 @@ export async function tradeCommand(i, deps) {
   try {
     o = await deps.rpc('bot_trade_options', { p_discord_id: me, p_to_discord_id: target });
   } catch (e) {
-    return { content: e.message + (/Sign in|isn't on Player Cards/.test(e.message) ? '\n' + SITE : '') };
+    if (/Sign in on the Player Cards site/.test(e.message)) return notSignedIn();
+    if (/isn't on Player Cards yet/.test(e.message)) {
+      const u = (d.resolved && d.resolved.users && d.resolved.users[target]) || {};
+      return otherNotSignedIn(u.global_name || u.username || 'That player');
+    }
+    return { content: e.message };
   }
   const draft = await deps.createDraft({ discord_id: me, to_discord_id: target, to_user: o.them.id });
   return builderMessage(draft, o);

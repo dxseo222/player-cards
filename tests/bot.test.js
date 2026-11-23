@@ -98,7 +98,7 @@ test('bot: /card shows your own card, someone else’s, or says why it can’t',
   assert.match(noCard.content, /pal\*\* signed in but hasn’t made a card yet/);
 
   const stranger = await bot.commandReply(slash('card', [{ name: 'player', type: 6, value: '999' }], { resolved: { users: { 999: { id: '999', global_name: 'New_Guy' } } } }), deps);
-  assert.match(stranger.content, /New\\_Guy\*\* is not on Player Cards yet/);
+  assert.match(stranger.content, /New\\_Guy\*\* isn’t on Player Cards yet\. Send them the site/);
 
   const hidden = await bot.commandReply(slash('card'), fakeDeps({ players: { [ME]: player({ card: { id: CARD, hidden: true, version: 1, data: null } }) } }));
   assert.match(hidden.content, /hidden by a moderator/);
@@ -131,7 +131,9 @@ test('bot: /collection lists what someone holds', async () => {
   assert.match(r.embeds[0].description, /\*\*bob\*\* · Original 2\/2 · by bob/);
   assert.match(r.embeds[0].footer.text, /4 cards · 2 players collected/);
   const empty = await bot.commandReply(slash('collection'), fakeDeps({ players: { [ME]: player({ items: [] }) } }));
-  assert.match(empty.content, /hasn’t collected any cards yet/);
+  assert.match(empty.content, /You haven’t collected any cards yet\. Trade with a friend using `\/trade`/);
+  const theirs = await bot.commandReply(slash('collection', [{ name: 'player', type: 6, value: FRIEND }]), fakeDeps({ players: { [FRIEND]: player({ items: [], player: { id: 'p2', username: 'pal' } }) } }));
+  assert.match(theirs.content, /\*\*pal\*\* hasn’t collected any cards yet/);
 });
 
 test('bot: /feed here makes a webhook, replaces the old one, and explains missing permissions', async () => {
@@ -219,6 +221,40 @@ test('bot: blank tags and traits never make an empty field', async () => {
   assert.ok(r.embeds[0].fields.every((f) => f.value && f.value.trim()), 'every field has text');
   assert.ok(!r.embeds[0].fields.some((f) => f.name === 'Tags' || f.name === 'Traits'));
   assert.equal(r.embeds[0].title, 'player');
+});
+
+test('bot: /help explains the basics and says what to do next', async () => {
+  const help = slash('help');
+  assert.equal(bot.isEphemeral(help), true, 'only you see it');
+  assert.ok(bot.COMMANDS.some((c) => c.name === 'help'));
+
+  const stranger = await bot.commandReply(help, fakeDeps());
+  assert.match(stranger.embeds[0].description, /not signed in yet\. Start with step 1/);
+  assert.deepEqual(stranger.components[0].components[0], { type: 2, style: 5, label: 'Make your card', url: bot.SITE + '#card' });
+  assert.deepEqual(stranger.embeds[0].fields.map((f) => f.name), ['Getting started', 'Cards', 'Trading', 'How cards work', 'For server admins']);
+
+  const noCard = await bot.commandReply(help, fakeDeps({ players: { [ME]: player({ card: null }) } }));
+  assert.match(noCard.embeds[0].description, /no card yet\. Step 2 is next/);
+
+  const ready = await bot.commandReply(help, fakeDeps({ players: { [ME]: player() } }));
+  assert.match(ready.embeds[0].description, /your card \*\*dxseo\*\* is ready\. You hold 4 cards from 2 other players\./);
+  assert.equal(ready.components[0].components[0].label, 'Open Player Cards');
+  for (const m of [stranger, noCard, ready]) {
+    for (const f of m.embeds[0].fields) assert.ok(f.value.length <= 1024 && !f.value.includes('\\n'), 'real line breaks in ' + f.name);
+  }
+});
+
+test('bot: new players are told what to do, with a button to the site', async () => {
+  const signedOut = await bot.commandReply(slash('card'), fakeDeps());
+  assert.match(signedOut.content, /^You’re not on Player Cards yet\. Open the site, sign in with Discord and make your card/);
+  assert.equal(signedOut.components[0].components[0].url, bot.SITE + '#card');
+
+  const noCard = await bot.commandReply(slash('card'), fakeDeps({ players: { [ME]: player({ card: null }) } }));
+  assert.match(noCard.content, /^You haven’t made your card yet/);
+  assert.equal(noCard.components[0].components[0].label, 'Make your card');
+
+  const noCardCollection = await bot.commandReply(slash('collection'), fakeDeps({ players: { [ME]: player({ card: null, items: [] }) } }));
+  assert.match(noCardCollection.content, /^You haven’t made your card yet/);
 });
 
 test('bot: command names and options are ones Discord accepts', () => {
