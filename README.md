@@ -26,7 +26,7 @@ Then open http://127.0.0.1:5181. (Opening `index.html` directly doesn't work, be
 
 ### 1. Create the Supabase project
 1. Sign up at supabase.com and create a new project (any name, free plan).
-2. Go to **SQL Editor → New query** and run each file in [`supabase/`](supabase) **in this order**, one query each: `schema.sql`, `002_portraits.sql`, `003_versions_moderation.sql`, `004_profile_names.sql`, `005_counters_wishlist.sql`, `006_activity.sql`, `007_bot.sql`, then `009_card_images.sql`. (`008_bot_schedule.sql` is part of the Discord bot setup below.)
+2. Go to **SQL Editor → New query** and run each file in [`supabase/`](supabase) **in this order**, one query each: `schema.sql`, `002_portraits.sql`, `003_versions_moderation.sql`, `004_profile_names.sql`, `005_counters_wishlist.sql`, `006_activity.sql`, `007_bot.sql`, then `009_card_images.sql` and `010_bot_trades.sql`. (`008_bot_schedule.sql` is part of the Discord bot setup below.)
 
 ### 2. Turn on "Sign in with Discord"
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create a **new application** (keep it separate from any bot) and open **OAuth2**.
@@ -62,6 +62,9 @@ Edge Function, so there's no server to keep on.
 
 - `/card [player]` shows someone's card (yours if you leave it empty) as a picture of the card itself. Right-click a user → **Apps → Player Card** does the same.
 - `/collection [player]` lists the cards someone has collected.
+- `/trade @player` opens a private menu: pick what you give and what you want (a new edition of either card, or cards you hold), add a note if you like, and send. The other player gets pinged in the channel with a **View offer** button that only works for them; the offer itself is never shown to anyone else. They can **Accept**, **Decline** or **Counter**, and you can **Cancel** while it's open. Accepting pings you back.
+- `/trades` lists your offers that are still waiting for an answer.
+- Trades in Discord are the same trades as on the site, with the same rules. Offers made on either show up on both, and you can answer them in either place.
 - `/feed here` (Manage Server only) posts new cards, new versions and finished trades in that channel, about a minute after they happen. `/feed off` stops it.
 
 **Card pictures:** after you save, your browser draws the front of your card and uploads it to Supabase Storage (the `card-images` bucket, in your own folder), and the bot shows that picture. Cards made before this get their picture the next time their owner opens the site; until then the bot shows the card as text.
@@ -132,6 +135,8 @@ npm test
 - `tests/db.test.js` runs every file in `supabase/` on an in-process Postgres (PGlite) with Supabase's auth and storage faked, then checks the rules: originals and copies, frozen versions, permissions, moderation, names, counter-offers, wishlists and the activity feed.
 - `tests/bot-db.test.js` checks what the Discord bot can read: the feed it posts (once each, in order, never messages or hidden cards), the `/card` lookup, card pictures (own folder only, cleared when the card changes), and that none of it is open to the site.
 - `tests/bot.test.js` runs the bot's code with fake Discord and database calls: request signatures, `/card`, `/collection`, `/feed` and the feed posts.
+- `tests/bot-trades-db.test.js` checks trading through the bot: it acts only for the Discord user who pressed the button, through the site's own trade rules.
+- `tests/bot-trades.test.js` runs `/trade`, `/trades` and the offer buttons with fake Discord and database calls.
 - `tests/export.test.js` runs the export parser and card cleaning on a small made-up export (no real messages).
 
 ## Files
@@ -147,7 +152,7 @@ npm test
 | `js/api-supabase.js` | Live backend |
 | `js/api-local.js` | Demo backend (browser storage) |
 | `supabase/*.sql` | Tables, permissions and all game rules, run in order |
-| `supabase/functions/discord-bot/` | The Discord bot (`bot.ts` is the logic, `index.ts` connects it to Discord and the database) |
+| `supabase/functions/discord-bot/` | The Discord bot (`bot.ts`: cards, feed, commands; `trades.ts`: trading; `index.ts` connects it to Discord and the database) |
 | `tests/` | Automated tests |
 | `.github/workflows/` | Tests, keep-awake, backup and bot deploy jobs |
 | `css/` | Card and app styles |

@@ -3,12 +3,13 @@
 // (tests/bot.test.js) can run it with fake Discord and database calls.
 //
 // Commands:  /card [player]   /collection [player]   right-click a user → Apps → Player Card
+//            /trade @player   /trades   (trading lives in trades.ts)
 //            /feed here   /feed off   (Manage Server only: where new cards and trades are posted)
 
 export const SITE = 'https://dxseo222.github.io/player-cards/';
 
 // Bump this whenever COMMANDS changes; the next feed run re-registers them with Discord.
-export const COMMANDS_VERSION = 1;
+export const COMMANDS_VERSION = 2;
 
 const PLAYER_OPTION = { type: 6, name: 'player', description: 'Whose (leave empty for yours)', required: false };
 const GUILD_ONLY = { contexts: [0], integration_types: [0] };
@@ -16,6 +17,11 @@ export const COMMANDS = [
   { name: 'card', type: 1, description: 'Show a Player Card', options: [PLAYER_OPTION], ...GUILD_ONLY },
   { name: 'collection', type: 1, description: 'Show the Player Cards someone has collected', options: [PLAYER_OPTION], ...GUILD_ONLY },
   { name: 'Player Card', type: 2, ...GUILD_ONLY },
+  {
+    name: 'trade', type: 1, description: 'Offer someone a trade',
+    options: [{ type: 6, name: 'player', description: 'Who to trade with', required: true }], ...GUILD_ONLY,
+  },
+  { name: 'trades', type: 1, description: 'Your trade offers that are still waiting for an answer', ...GUILD_ONLY },
   {
     name: 'feed', type: 1, description: 'Post new Player Cards and finished trades in a channel',
     default_member_permissions: '32', // Manage Server
@@ -33,7 +39,7 @@ export const COMMANDS = [
 const TIERS = [['Mythic', 150000], ['Legendary', 75000], ['Epic', 25000], ['Rare', 5000], ['Common', 0]];
 export const rarityFor = (count) => TIERS.find(([, min]) => (Number(count) || 0) >= min)[0];
 export const RARITY_COLORS = { Common: 0x8b807b, Rare: 0x3d86de, Epic: 0x9b6bff, Legendary: 0xf0b52a, Mythic: 0xff4fd8 };
-const TRADE_COLOR = 0xf2c94c;
+export const TRADE_COLOR = 0xf2c94c;
 
 // Shortens to at most n UTF-16 units without cutting an emoji or fancy letter in half.
 export function cut(value, n) {
@@ -49,7 +55,7 @@ export function cut(value, n) {
 
 // Player-written text is shown as plain text, never as Discord formatting or links.
 export const esc = (s) => String(s ?? '').replace(/[\\*_~`|>[\]()<#@:-]/g, '\\$&');
-const text = (s, n) => esc(cut(String(s ?? '').replace(/\s+/g, ' ').trim(), n));
+export const text = (s, n) => esc(cut(String(s ?? '').replace(/\s+/g, ' ').trim(), n));
 
 export const shareUrl = (cardId, version) => SITE + '#view-' + cardId + (version ? '-v' + version : '');
 
@@ -251,8 +257,8 @@ export async function verifyDiscord(publicKeyHex, signatureHex, timestamp, body,
   }
 }
 
-// Only the /feed replies are private to the person who ran it.
-export const isEphemeral = (i) => i.data && i.data.name === 'feed';
+// Only the person who ran /feed, /trade or /trades sees the reply.
+export const isEphemeral = (i) => !!i.data && ['feed', 'trade', 'trades'].includes(i.data.name);
 
 const userName = (u) => (u && (u.global_name || u.username)) || 'That player';
 

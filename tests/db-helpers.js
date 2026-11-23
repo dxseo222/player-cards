@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SQL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'supabase');
-export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql', '007_bot.sql', '009_card_images.sql'];
+export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql', '007_bot.sql', '009_card_images.sql', '010_bot_trades.sql'];
 // 008_bot_schedule.sql needs Supabase's pg_cron and pg_net, so it only runs on the real database.
 
 const SUPABASE_STUBS = `
@@ -15,7 +15,11 @@ const SUPABASE_STUBS = `
   create schema auth;
   create table auth.users (id uuid primary key, raw_user_meta_data jsonb default '{}');
   create table auth.identities (id uuid primary key default gen_random_uuid(), user_id uuid references auth.users(id), provider text, provider_id text);
-  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+  -- like Supabase's: the signed-in player's id from the request (tests set test.uid instead)
+  create function auth.uid() returns uuid language sql stable as $$ select coalesce(
+    nullif(current_setting('test.uid', true), ''),
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')::uuid $$;
   grant usage on schema auth to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
   create schema storage;

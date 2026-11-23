@@ -22,7 +22,7 @@ const accept = (db, uid, trade) => as(db, uid, () => q(db, 'select public.respon
 
 test('all migrations apply in order and can be re-run', async () => {
   const db = await freshDb();
-  for (const m of ['003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql', '007_bot.sql', '009_card_images.sql']) await db.exec(readMigration(m));
+  for (const m of ['003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql', '007_bot.sql', '009_card_images.sql', '010_bot_trades.sql']) await db.exec(readMigration(m));
 });
 
 test('making a card gives the creator Original 1/2', async () => {

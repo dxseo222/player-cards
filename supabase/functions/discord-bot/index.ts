@@ -10,6 +10,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { SITE, verifyDiscord, commandReply, isEphemeral, runFeed } from './bot.ts';
+import { tradeCommand, componentReply } from './trades.ts';
 
 const env = (k) => Deno.env.get(k) || '';
 const API = 'https://discord.com/api/v10';
@@ -81,11 +82,52 @@ const deps = {
     if (error) throw new Error(error.message);
     return (data || [])[0] || null;
   },
+  // offers being put together with /trade (unfinished ones are cleared after a day)
+  async createDraft(row) {
+    await sb.from('bot_trade_drafts').delete().lt('created_at', new Date(Date.now() - 86400000).toISOString());
+    const { data, error } = await sb.from('bot_trade_drafts').insert(row).select().single();
+    if (error) throw new Error(error.message);
+    return data;
+  },
+  async getDraft(id) {
+    const { data, error } = await sb.from('bot_trade_drafts').select('*').eq('id', id).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data;
+  },
+  async updateDraft(id, patch) {
+    const { data, error } = await sb.from('bot_trade_drafts').update(patch).eq('id', id).select().single();
+    if (error) throw new Error(error.message);
+    return data;
+  },
+  async deleteDraft(id) {
+    const { error } = await sb.from('bot_trade_drafts').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  },
   async setCommandsVersion(v) {
     const { error } = await sb.from('bot_state').update({ commands_version: v }).eq('id', true);
     if (error) throw new Error(error.message);
   },
 };
+
+// After a button: replace the message it was on (edit), then maybe post in the channel (followup).
+async function followThrough(i, slow) {
+  let out;
+  try {
+    out = await slow();
+  } catch (e) {
+    console.error('Button failed:', e.message);
+    out = { edit: { content: 'Something went wrong. Try again in a minute.' } };
+  }
+  const hook = API + '/webhooks/' + i.application_id + '/' + i.token;
+  if (out.edit) {
+    const r = await call(hook + '/messages/@original', 'PATCH', { allowed_mentions: { parse: [] }, ...out.edit }, false);
+    if (!r.ok) console.error('Edit failed', r.status, JSON.stringify(r.body));
+  }
+  if (out.followup) {
+    const r = await call(hook, 'POST', out.followup, false);
+    if (!r.ok) console.error('Channel message failed', r.status, JSON.stringify(r.body));
+  }
+}
 
 // Keeps working after the reply has gone back to Discord.
 const later = (promise) => (typeof EdgeRuntime !== 'undefined' ? EdgeRuntime.waitUntil(promise) : promise);
@@ -109,10 +151,18 @@ Deno.serve(async (req) => {
 
   const i = JSON.parse(body);
   if (i.type === 1) return json({ type: 1 }); // Discord checking the endpoint
+
+  // Buttons, menus (3) and forms (5): answer right away, then do the slow part.
+  if (i.type === 3 || i.type === 5) {
+    const { response, later: slow } = componentReply(i, deps);
+    if (slow) later(followThrough(i, slow));
+    return json(response);
+  }
   if (i.type !== 2) return json({ type: 4, data: { content: 'That isn’t supported.', flags: 64 } });
 
   // Answer "thinking…" right away (Discord allows 3 seconds), then fill in the real reply.
-  const done = commandReply(i, deps)
+  const reply = ['trade', 'trades'].includes(i.data && i.data.name) ? tradeCommand : commandReply;
+  const done = reply(i, deps)
     .catch((e) => {
       console.error('Command failed:', e.message);
       return { content: 'Something went wrong. Try again in a minute.' };
