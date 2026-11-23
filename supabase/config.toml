@@ -1,0 +1,6 @@
+# Supabase CLI settings, only used to deploy the Discord bot (README → Discord bot).
+project_id = "player-cards"
+
+[functions.discord-bot]
+# Discord can't send a Supabase login, so the bot checks Discord's own signature instead.
+verify_jwt = false

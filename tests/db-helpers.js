@@ -7,12 +7,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SQL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'supabase');
-export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql'];
+export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql', '007_bot.sql'];
+// 008_bot_schedule.sql needs Supabase's pg_cron and pg_net, so it only runs on the real database.
 
 const SUPABASE_STUBS = `
-  create role anon nologin; create role authenticated nologin;
+  create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
   create schema auth;
   create table auth.users (id uuid primary key, raw_user_meta_data jsonb default '{}');
+  create table auth.identities (id uuid primary key default gen_random_uuid(), user_id uuid references auth.users(id), provider text, provider_id text);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
   grant usage on schema auth to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
@@ -43,6 +45,13 @@ export async function q(db, sql, params) {
 export async function as(db, uid, fn) {
   await db.exec(`set test.uid = '${uid || ''}'`);
   await db.exec(uid ? 'set role authenticated' : 'set role anon');
+  try { return await fn(); } finally { await db.exec('reset role'); }
+}
+
+// Runs fn as the Discord bot (the service role).
+export async function asBot(db, fn) {
+  await db.exec(`set test.uid = ''`);
+  await db.exec('set role service_role');
   try { return await fn(); } finally { await db.exec('reset role'); }
 }
 
