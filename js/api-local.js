@@ -3,7 +3,7 @@
 // (cards, versions, originals/copies, trades, moderation) can be tried locally.
 // The rules here mirror supabase/*.sql.
 
-import { blankCard } from './card.js?v10';
+import { blankCard } from './card.js?v11';
 
 const KEY = 'player-cards-demo-v2';
 let memory = null;
@@ -69,6 +69,7 @@ function mint(s, card, ownerId) {
     v.copies_minted += 1;
     s.items.push({ id: uid(), card_id: card.id, version_id: v.id, owner_id: ownerId, edition: 'copy', serial: v.copies_minted });
   }
+  return s.items[s.items.length - 1].id;
 }
 function checkItems(s, ids, owner) {
   if (new Set(ids).size !== ids.length) fail('A card is listed twice');
@@ -113,6 +114,7 @@ export const api = {
     save();
     return c.id;
   },
+  async cardVersions(cardId) { return clone(load().versions.filter((v) => v.card_id === cardId).sort((a, b) => a.version - b.version)); },
   async versions(ids) { return clone(load().versions.filter((v) => ids.includes(v.id))); },
   async publicCard(cardId, version) {
     const s = load();
@@ -168,8 +170,9 @@ export const api = {
       if (t.offer_items.includes(i.id)) i.owner_id = t.to_user;
       else if (t.request_items.includes(i.id)) i.owner_id = t.from_user;
     });
-    if (t.offer_mint) mint(s, s.cards.find((c) => c.creator_id === t.from_user), t.to_user);
-    if (t.request_mint) mint(s, s.cards.find((c) => c.creator_id === t.to_user), t.from_user);
+    // The demo remembers which editions a trade minted, for the activity feed.
+    t.minted_to = t.offer_mint ? mint(s, s.cards.find((c) => c.creator_id === t.from_user), t.to_user) : null;
+    t.minted_from = t.request_mint ? mint(s, s.cards.find((c) => c.creator_id === t.to_user), t.from_user) : null;
     t.status = 'accepted';
     save();
     tradeEvent(t, 'UPDATE');
@@ -208,6 +211,28 @@ export const api = {
   async allItems() { return clone(load().items); },
   async allVersions() {
     return load().versions.map((v) => ({ id: v.id, card_id: v.card_id, version: v.version, original2_given: v.original2_given, copies_minted: v.copies_minted, msgCount: v.data.msgCount || 0 }));
+  },
+  // Mirrors supabase/006_activity.sql: hidden cards are left out, messages never included.
+  async activity({ before = null, player = null, limit = 40 } = {}) {
+    const s = load();
+    const hidden = new Set(s.cards.filter((c) => c.hidden).map((c) => c.id));
+    const moved = (ids) => s.items.filter((i) => ids.includes(i.id) && !hidden.has(i.card_id))
+      .map((i) => ({ card_id: i.card_id, version: (s.versions.find((v) => v.id === i.version_id) || {}).version || 1, edition: i.edition, serial: i.serial }))
+      .sort((a, b) => b.edition.localeCompare(a.edition) || a.serial - b.serial);
+    const events = [
+      ...s.versions.filter((v) => !hidden.has(v.card_id)).map((v) => {
+        const c = s.cards.find((x) => x.id === v.card_id);
+        return { kind: v.version === 1 ? 'card' : 'version', happened_at: v.created_at, actor: c.creator_id, other: null, card_id: c.id, version: v.version, to_other: [], to_actor: [] };
+      }),
+      ...s.trades.filter((t) => t.status === 'accepted').map((t) => ({
+        kind: 'trade', happened_at: t.resolved_at, actor: t.from_user, other: t.to_user, card_id: null, version: null,
+        to_other: moved([...t.offer_items, t.minted_to].filter(Boolean)), to_actor: moved([...t.request_items, t.minted_from].filter(Boolean)),
+      })).filter((e) => e.to_other.length || e.to_actor.length),
+    ];
+    return events
+      .filter((e) => (!before || e.happened_at < before) && (!player || e.actor === player || e.other === player))
+      .sort((a, b) => b.happened_at.localeCompare(a.happened_at))
+      .slice(0, limit);
   },
   // In demo mode every "player" is in this browser, so events are delivered directly.
   onTrades(cb) { tradeListeners.clear(); tradeListeners.add(cb); },

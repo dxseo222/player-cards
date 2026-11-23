@@ -6,7 +6,8 @@ Make a player card from your Discord messages, then trade cards with friends.
 - **Originals and copies.** Every card has two originals. **Original 1/2** stays with its creator forever. The creator's first trade of their own card hands out **Original 2/2**; every trade after that mints a numbered **Copy #1, #2, …**. Anyone holding Original 2/2 or a copy can trade it on.
 - **Versions.** Once a version of your card has been traded it's frozen, so everyone keeps the card they got. Your next save starts a new version with its own Original 1/2 and 2/2.
 - **Trading.** Offers, counter-offers and wishlists, with live updates and optional browser notifications. The rules are enforced in the database, so they can't be bypassed from the browser.
-- **Collecting.** 14 badges, a collection score and a leaderboard. Any card can be shared with a link or downloaded as a PNG.
+- **Collecting.** 14 badges, a collection score and a leaderboard. Cards you get from a trade are revealed with an animation the first time you see them. Any card can be shared with a link or downloaded as a PNG.
+- **Activity and profiles.** An activity feed of new cards, new versions and finished trades (only what changed hands, never messages or open offers), and a profile page for every player with their card, its history, stats, badges and collection.
 - **Moderation.** Players can report cards; moderators can hide cards and remove pictures.
 
 It's a static site (GitHub Pages) plus [Supabase](https://supabase.com) for Discord sign-in and the database. Both have free tiers.
@@ -25,7 +26,7 @@ Then open http://127.0.0.1:5181. (Opening `index.html` directly doesn't work, be
 
 ### 1. Create the Supabase project
 1. Sign up at supabase.com and create a new project (any name, free plan).
-2. Go to **SQL Editor → New query** and run each file in [`supabase/`](supabase) **in this order**, one query each: `schema.sql`, `002_portraits.sql`, `003_versions_moderation.sql`, `004_profile_names.sql`, `005_counters_wishlist.sql`.
+2. Go to **SQL Editor → New query** and run each file in [`supabase/`](supabase) **in this order**, one query each: `schema.sql`, `002_portraits.sql`, `003_versions_moderation.sql`, `004_profile_names.sql`, `005_counters_wishlist.sql`, `006_activity.sql`.
 
 ### 2. Turn on "Sign in with Discord"
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create a **new application** (keep it separate from any bot) and open **OAuth2**.
@@ -94,7 +95,7 @@ npm install
 npm test
 ```
 
-- `tests/db.test.js` runs every file in `supabase/` on an in-process Postgres (PGlite) with Supabase's auth and storage faked, then checks the rules: originals and copies, frozen versions, permissions, moderation, names, counter-offers and wishlists.
+- `tests/db.test.js` runs every file in `supabase/` on an in-process Postgres (PGlite) with Supabase's auth and storage faked, then checks the rules: originals and copies, frozen versions, permissions, moderation, names, counter-offers, wishlists and the activity feed.
 - `tests/export.test.js` runs the export parser and card cleaning on a small made-up export (no real messages).
 
 ## Files
@@ -103,7 +104,7 @@ npm test
 | --- | --- |
 | `index.html` | Page shell |
 | `config.js` | Your Supabase URL and publishable key (empty = demo mode) |
-| `js/app.js` | Screens: My card, Collection, Players, Trades, Leaderboard, Moderation, shared card pages |
+| `js/app.js` | Screens: My card, Collection, Players, Activity, Trades, Leaderboard, Moderation, player profiles, shared card pages, card reveals |
 | `js/card.js` | Draws a card: themes, fonts, frames, finishes, colors, portraits |
 | `js/export.js` | Reads a Discord export and suggests card fields |
 | `js/goals.js` | Badges, collection score and leaderboard |

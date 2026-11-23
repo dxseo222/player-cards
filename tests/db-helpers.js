@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SQL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'supabase');
-export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql'];
+export const MIGRATIONS = ['schema.sql', '002_portraits.sql', '003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql'];
 
 const SUPABASE_STUBS = `
   create role anon nologin; create role authenticated nologin;

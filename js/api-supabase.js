@@ -2,7 +2,7 @@
 // supabase/*.sql, so they can't be bypassed from the browser.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v10';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v11';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const listeners = new Set();
@@ -16,6 +16,9 @@ function check({ data, error }) {
     }
     if (/wishlist|counter_trade|counter_of/.test(error.message || '')) {
       throw new Error('The database needs an update. Run supabase/005_counters_wishlist.sql in Supabase.');
+    }
+    if (/activity_feed/.test(error.message || '')) {
+      throw new Error('The database needs an update. Run supabase/006_activity.sql in Supabase.');
     }
     throw new Error(error.message || 'Something went wrong talking to the server');
   }
@@ -77,6 +80,10 @@ export const api = {
     return check(await sb.from('card_versions').select('*').in('id', ids));
   },
   // Works signed out too, for shared links (hidden cards come back empty).
+  // Every version of one card, oldest first (for player profiles).
+  async cardVersions(cardId) {
+    return check(await sb.from('card_versions').select('*').eq('card_id', cardId).order('version'));
+  },
   async publicCard(cardId, version) {
     const cards = check(await sb.from('cards').select('id, data, current_version, hidden, creator_id').eq('id', cardId));
     if (!cards[0]) return null;
@@ -144,6 +151,10 @@ export const api = {
   async allItems() { return check(await sb.from('items').select('id, card_id, version_id, owner_id, edition, serial').limit(10000)); },
   async allVersions() {
     return check(await sb.from('card_versions').select('id, card_id, version, original2_given, copies_minted, msgCount:data->msgCount').limit(10000));
+  },
+  // New cards, new versions and accepted trades (what moved, never messages), newest first.
+  async activity({ before = null, player = null, limit = 40 } = {}) {
+    return check(await sb.rpc('activity_feed', { p_before: before, p_limit: limit, p_player: player }));
   },
   async cancel(id) { check(await sb.rpc('cancel_trade', { p_trade: id })); },
 

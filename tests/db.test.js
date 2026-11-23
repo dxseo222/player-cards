@@ -22,7 +22,7 @@ const accept = (db, uid, trade) => as(db, uid, () => q(db, 'select public.respon
 
 test('all migrations apply in order and can be re-run', async () => {
   const db = await freshDb();
-  for (const m of ['003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql']) await db.exec(readMigration(m));
+  for (const m of ['003_versions_moderation.sql', '004_profile_names.sql', '005_counters_wishlist.sql', '006_activity.sql']) await db.exec(readMigration(m));
 });
 
 test('making a card gives the creator Original 1/2', async () => {
@@ -139,4 +139,61 @@ test('wishlists: only your own wishes, never your own card', async () => {
   await rejects(as(db, B, () => q(db, 'insert into public.wishlist (user_id, card_id) values ($1, $2)', [A, bobCard])), /row-level security/);
   await as(db, A, () => q(db, 'delete from public.wishlist where user_id = $1', [B]));
   assert.equal((await q(db, 'select count(*)::int n from public.wishlist'))[0].n, 1, 'others cannot delete your wishes');
+});
+
+const feed = (db, uid, before = null, player = null) =>
+  as(db, uid, () => q(db, 'select * from public.activity_feed($1, 40, $2)', [before, player]));
+
+test('activity feed: new cards, versions and what moved in trades, never messages', async () => {
+  const db = await twoPlayersWithCards();
+  await addUser(db, C, { name: 'carol' });
+  const aliceCard = (await cardOf(db, A)).id;
+  const bobCard = (await cardOf(db, B)).id;
+  // Alice gives Bob Original 2/2 of her card and gets Original 2/2 of Bob's, with a message.
+  const t1 = await as(db, A, () => q(db, `select public.propose_trade($1, '{}', true, '{}', true, 'secret note') id`, [B])).then((r) => r[0].id);
+  assert.equal(await accept(db, B, t1), 'accepted');
+  await accept(db, B, await propose(db, A, B, { offerMint: true }));
+  await propose(db, A, B, { offerMint: true }); // still pending: must not show
+  const declined = await propose(db, A, B, { offerMint: true });
+  await as(db, B, () => q(db, 'select public.respond_trade($1, false)', [declined]));
+  await as(db, A, () => q(db, `select public.save_card('{"name":"alice v2"}')`));
+
+  const rows = await feed(db, C);
+  assert.deepEqual(rows.map((r) => r.kind), ['version', 'trade', 'trade', 'card', 'card']);
+  assert.equal(rows[0].actor, A);
+  assert.equal(rows[0].version, 2);
+  const [second, first] = [rows[1], rows[2]];
+  assert.deepEqual(first.to_other, [{ card_id: aliceCard, version: 1, edition: 'original', serial: 2 }], 'Bob got Original 2/2 of Alice’s card');
+  assert.deepEqual(first.to_actor, [{ card_id: bobCard, version: 1, edition: 'original', serial: 2 }], 'Alice got Original 2/2 of Bob’s card');
+  assert.deepEqual(second.to_other, [{ card_id: aliceCard, version: 1, edition: 'copy', serial: 1 }]);
+  assert.deepEqual(second.to_actor, []);
+  assert.ok(!JSON.stringify(rows).includes('secret note'), 'trade messages stay private');
+
+  // a traded-on item shows up too, by its own edition
+  const bobsCopy = (await q(db, `select id from public.items where card_id = $1 and owner_id = $2 and edition = 'copy'`, [aliceCard, B]))[0].id;
+  await accept(db, C, await propose(db, B, C, { offer: [bobsCopy] }));
+  const [latest] = await feed(db, A);
+  assert.equal(latest.actor, B);
+  assert.equal(latest.other, C);
+  assert.deepEqual(latest.to_other, [{ card_id: aliceCard, version: 1, edition: 'copy', serial: 1 }]);
+});
+
+test('activity feed: paging, one player, hidden cards and signed-out visitors', async () => {
+  const db = await twoPlayersWithCards();
+  await addUser(db, C, { name: 'carol' });
+  await as(db, C, () => q(db, `select public.save_card('{"name":"carol"}')`));
+  await accept(db, B, await propose(db, A, B, { offerMint: true }));
+  const all = await feed(db, A);
+  assert.equal(all.length, 4);
+  const older = await feed(db, A, all[1].happened_at);
+  assert.deepEqual(older.map((r) => r.happened_at), all.slice(2).map((r) => r.happened_at), 'Load more continues where the page ended');
+  assert.deepEqual((await feed(db, A, null, C)).map((r) => r.kind), ['card'], 'a player’s profile only shows their events');
+
+  await q(db, 'update public.cards set hidden = true where creator_id = $1', [A]);
+  const after = await feed(db, B);
+  assert.ok(after.every((r) => r.actor !== A || r.kind === 'trade'), 'hidden cards’ own events are gone');
+  assert.ok(!after.some((r) => r.kind === 'trade'), 'a trade with only hidden cards in it disappears');
+
+  await rejects(feed(db, null), /permission denied/, 'signed-out visitors cannot read the feed');
+  await rejects(as(db, B, () => q(db, `select public._moved_items('{}', false, $1, now())`, [A])), /permission denied/);
 });

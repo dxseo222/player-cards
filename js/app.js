@@ -1,10 +1,10 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v10';
-import { renderCard, blankCard, cleanCard, editionLabel, THEMES, NAME_FONTS, FRAMES, FINISHES, COLOR_KEYS, THEME_COLORS, nextTier, clip } from './card.js?v10';
-import { parseExport, sources, computeStats, suggest } from './export.js?v10';
-import { buildWorld, playerStats, badgesFor, leaderboards, BADGES } from './goals.js?v10';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v11';
+import { renderCard, blankCard, cleanCard, editionLabel, THEMES, NAME_FONTS, FRAMES, FINISHES, COLOR_KEYS, THEME_COLORS, nextTier, clip } from './card.js?v11';
+import { parseExport, sources, computeStats, suggest } from './export.js?v11';
+import { buildWorld, playerStats, badgesFor, leaderboards, BADGES } from './goals.js?v11';
 
 const live = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-const { api } = live ? await import('./api-supabase.js?v10') : await import('./api-local.js?v10');
+const { api } = live ? await import('./api-supabase.js?v11') : await import('./api-local.js?v11');
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -52,6 +52,8 @@ $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') clos
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 
 const playerName = (id) => (state.playersById.get(id) || {}).username || 'Someone';
+const profileHash = (id) => '#player-' + id;
+const playerLink = (id) => (state.playersById.has(id) ? h('a', { class: 'plink', href: profileHash(id), text: playerName(id) }) : h('span', { text: playerName(id) }));
 const cardName = (cardId) => { const c = state.cardsById.get(cardId); return c ? cleanCard(c.data).name : 'a card'; };
 const isLocked = (i) => i.edition === 'original' && i.serial === 1;
 // The edition someone gets next from this card's current version.
@@ -534,7 +536,7 @@ async function renderCollection() {
     if (!card) continue;
     grid.append(h('div', { class: 'slot' },
       cardThumb(card, itemData(it), it),
-      h('div', { class: 'meta' }, h('b', { text: editionLabel(it) }), ' · made by ', playerName(card.creator_id),
+      h('div', { class: 'meta' }, h('b', { text: editionLabel(it) }), ' · made by ', playerLink(card.creator_id),
         isLocked(it) ? h('div', { class: 'muted', text: 'Yours forever, can’t be traded' }) : null),
       h('a', { class: 'btn ghost small', href: shareHash(card.id, it.version) }, 'Share')));
   }
@@ -575,7 +577,7 @@ async function renderLeaderboard() {
     h('h3', {}, title), h('p', { class: 'muted small', style: 'margin:4px 0 0', text: note }),
     rows.length ? h('ol', {}, rows.map((r, i) => h('li', { class: r.player && r.player.id === state.me.id ? 'me' : '' },
       h('span', { class: 'lb-rank', text: String(i + 1) }),
-      h('span', { class: 'lb-who', text: r.player ? r.player.username : cardName(r.card.id) + ' (' + playerName(r.card.creator_id) + ')' }),
+      h('a', { class: 'lb-who plink', href: profileHash(r.player ? r.player.id : r.card.creator_id), text: r.player ? r.player.username : cardName(r.card.id) + ' (' + playerName(r.card.creator_id) + ')' }),
       h('span', { class: 'lb-val', text: value(r) }))))
       : h('p', { class: 'muted', text: 'Nobody yet. Start trading!' }));
   view.replaceChildren(
@@ -603,7 +605,7 @@ async function renderPlayers() {
     const hiddenFromMe = c && c.hidden && !canSeeHidden(c);
     grid.append(h('div', { class: 'slot' },
       c ? cardThumb(c, c.data) : h('div', { class: 'empty', style: 'width:100%' }, 'No card yet'),
-      h('div', { class: 'meta' }, h('b', { text: p.username }),
+      h('div', { class: 'meta' }, h('b', {}, playerLink(p.id)),
         c && !hiddenFromMe ? h('div', { class: 'muted', text: (c.current_version > 1 ? 'Version ' + c.current_version + ' · ' : '')
           + (out ? out + ' traded out · next is ' + nextEdition(c) : 'Original 2/2 still available') }) : null,
         c && c.hidden && canSeeHidden(c) ? h('div', { class: 'muted', text: 'Hidden from other players' }) : null,
@@ -611,7 +613,7 @@ async function renderPlayers() {
       h('div', { class: 'row', style: 'justify-content:center' },
         h('button', { class: 'btn', type: 'button', onclick: () => openTrade(p) }, 'Propose a trade'),
         c && !hiddenFromMe ? wishButton(c, renderPlayers) : null,
-        c && !hiddenFromMe ? h('a', { class: 'btn ghost small', href: shareHash(c.id, c.current_version) }, 'View') : null,
+        h('a', { class: 'btn ghost small', href: profileHash(p.id) }, 'Profile'),
         c && !hiddenFromMe ? h('button', { class: 'btn ghost small', type: 'button', onclick: () => openReport(c, p.username) }, 'Report') : null)));
   }
   view.replaceChildren(
@@ -709,6 +711,181 @@ async function openTrade(other, opts = {}) {
     h('div', { class: 'row' }, send, h('button', { class: 'btn ghost', type: 'button', onclick: closeModal }, 'Cancel'))));
 }
 
+// ---------------------------------------------------------------- activity feed
+
+const ago = (iso) => {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  if (s < 86400 * 7) return Math.floor(s / 86400) + 'd ago';
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+const dayLabel = (iso) => {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+};
+const movedChips = (list) => h('div', { class: 'chips' }, list.map((m) => h('span', {
+  class: 'chip' + (m.edition === 'original' ? ' orig' : ''), text: cardName(m.card_id) + ' · ' + editionLabel(m),
+})));
+
+function activityRow(e) {
+  const when = h('time', { class: 'act-when', datetime: e.happened_at, title: new Date(e.happened_at).toLocaleString(), text: ago(e.happened_at) });
+  if (e.kind === 'trade') {
+    return h('li', { class: 'act act-trade' },
+      h('span', { class: 'act-icon', 'aria-hidden': 'true', text: '⇄' }),
+      h('div', { class: 'act-body' },
+        h('p', {}, playerLink(e.actor), ' traded with ', playerLink(e.other), ' ', when),
+        e.to_other.length ? h('div', { class: 'act-moved' }, h('span', { class: 'act-got', text: playerName(e.other) + ' got' }), movedChips(e.to_other)) : null,
+        e.to_actor.length ? h('div', { class: 'act-moved' }, h('span', { class: 'act-got', text: playerName(e.actor) + ' got' }), movedChips(e.to_actor)) : null));
+  }
+  const card = state.cardsById.get(e.card_id);
+  const meta = card ? cleanCard(card.data) : null;
+  return h('li', { class: 'act' },
+    h('span', { class: 'act-icon', 'aria-hidden': 'true', text: e.kind === 'card' ? '✦' : '⟳' }),
+    h('div', { class: 'act-body' },
+      h('p', {}, playerLink(e.actor), e.kind === 'card' ? ' made their card ' : ' updated their card to version ' + e.version + ' ', when),
+      e.kind === 'card' && meta ? h('p', { class: 'muted small', text: [meta.rarity, meta.className].filter(Boolean).join(' ') }) : null),
+    h('a', { class: 'btn ghost small', href: shareHash(e.card_id, e.version) }, 'View'));
+}
+
+// Groups rows under day headings, with a "Load more" button that continues the list.
+const PAGE = 40;
+function activityList(first, load, opts = {}) {
+  const wrap = h('div', { class: 'acts' });
+  let rows = first;
+  let lastDay = null;
+  let list = null;
+  const add = (batch) => batch.forEach((e) => {
+    const day = dayLabel(e.happened_at);
+    if (!opts.flat && day !== lastDay) { wrap.append(h('h3', { class: 'act-day', text: day })); list = null; lastDay = day; }
+    if (!list) { list = h('ul', { class: 'act-list' }); wrap.append(list); }
+    list.append(activityRow(e));
+  });
+  add(first);
+  if (load && first.length >= PAGE) {
+    const more = h('button', {
+      class: 'btn', type: 'button', onclick: async () => {
+        more.disabled = true;
+        try {
+          const batch = await attempt(() => load(rows.at(-1).happened_at));
+          rows = rows.concat(batch);
+          more.remove();
+          add(batch);
+          if (batch.length >= PAGE) { more.disabled = false; wrap.append(more); }
+        } catch { more.disabled = false; }
+      },
+    }, 'Load more');
+    wrap.append(more);
+  }
+  return wrap;
+}
+
+async function renderActivity() {
+  await refreshPlayers();
+  const rows = await api.activity({ limit: PAGE });
+  view.replaceChildren(
+    h('div', { class: 'head-row' }, h('div', {}, h('h1', {}, 'Activity'),
+      h('p', { class: 'lead' }, 'New cards, new versions and finished trades from everyone. Trade messages and open offers stay private.'))),
+    rows.length ? activityList(rows, (before) => api.activity({ before, limit: PAGE }))
+      : h('div', { class: 'empty' }, h('h3', {}, 'Nothing yet'), h('p', {}, 'When players make cards and trade, it shows up here.')));
+}
+
+// ---------------------------------------------------------------- player profiles
+
+async function renderProfile(id) {
+  await refreshPlayers();
+  const p = state.playersById.get(id);
+  document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === (id === state.me.id ? 'card' : 'players')));
+  if (!p) {
+    view.replaceChildren(h('div', { class: 'empty' }, h('h3', {}, 'Player not found'), h('a', { class: 'btn primary', href: '#players' }, 'All players')));
+    return;
+  }
+  const card = p.card;
+  const isMe = id === state.me.id;
+  const hiddenFromMe = card && card.hidden && !canSeeHidden(card);
+  const [items, world, events, versions] = await Promise.all([
+    api.items(id), loadWorld(), api.activity({ player: id, limit: 12 }).catch(() => null),
+    card && !hiddenFromMe ? api.cardVersions(card.id) : Promise.resolve([]),
+  ]);
+  versions.forEach((v) => state.versionsById.set(v.id, v));
+  await loadVersions(items);
+  const stats = playerStats(world, worldPlayer(world, id));
+  const badges = badgesFor(stats);
+  const earned = badges.filter((b) => b.earned);
+  const data = card ? cleanCard(card.data) : null;
+
+  const tile = (value, label) => h('div', { class: 'tile' }, h('b', { text: value }), h('span', { text: label }));
+  const joined = p.created_at ? 'Joined ' + new Date(p.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : null;
+  const sub = [joined, data && !hiddenFromMe ? [data.rarity, data.className].filter(Boolean).join(' ') : null, p.is_admin ? 'Moderator' : null].filter(Boolean).join(' · ');
+
+  const actions = h('div', { class: 'row' },
+    isMe ? h('a', { class: 'btn primary', href: '#card' }, 'Edit my card') : h('button', { class: 'btn primary', type: 'button', onclick: () => openTrade(p) }, 'Propose a trade'),
+    !isMe && card && !hiddenFromMe ? wishButton(card, () => renderProfile(id)) : null,
+    card && !hiddenFromMe ? h('a', { class: 'btn', href: shareHash(card.id, card.current_version) }, 'Share card') : null,
+    !isMe && card && !hiddenFromMe ? h('button', { class: 'btn ghost small', type: 'button', onclick: () => openReport(card, p.username) }, 'Report') : null);
+
+  let cardEl;
+  if (!card) cardEl = h('div', { class: 'empty profile-nocard' }, h('h3', {}, 'No card yet'), isMe ? h('a', { class: 'btn primary', href: '#card' }, 'Make your card') : h('p', {}, 'They haven’t made a card yet.'));
+  else if (hiddenFromMe) cardEl = hiddenPlaceholder();
+  else cardEl = renderCard(card.data, { item: { edition: 'original', serial: 1, version: card.current_version } });
+
+  // What they hold, best first: other people's originals, then copies, then their own card.
+  const own = (i) => (state.cardsById.get(i.card_id).creator_id === id ? 1 : 0);
+  const held = items.filter((i) => state.cardsById.has(i.card_id))
+    .sort((a, b) => own(a) - own(b) || (a.edition === b.edition ? 0 : a.edition === 'original' ? -1 : 1)
+      || cardName(a.card_id).localeCompare(cardName(b.card_id)) || a.version - b.version || a.serial - b.serial);
+
+  const history = versions.length > 1 ? h('section', { class: 'stack' }, h('h2', {}, 'Card history'),
+    h('p', { class: 'muted', style: 'margin:0', text: 'Each version is frozen once it’s been traded, so people keep the card they got.' }),
+    h('div', { class: 'cards' }, versions.slice().reverse().map((v) => {
+      const out = (v.original2_given ? 1 : 0) + (v.copies_minted || 0);
+      return h('div', { class: 'slot' },
+        renderCard(v.data, { item: { edition: 'original', serial: 1, version: v.version }, size: 'thumb' }),
+        h('div', { class: 'meta' }, h('b', { text: 'Version ' + v.version + (v.version === card.current_version ? ' (current)' : '') }),
+          h('div', { class: 'muted', text: (out ? out + ' traded out' : 'Not traded yet') + ' · ' + new Date(v.created_at).toLocaleDateString() })),
+        h('a', { class: 'btn ghost small', href: shareHash(card.id, v.version) }, 'View'));
+    }))) : null;
+
+  view.replaceChildren(
+    h('div', { class: 'head-row' },
+      h('div', { class: 'profile-head' },
+        p.avatar_url ? h('img', { class: 'profile-avatar', src: p.avatar_url, alt: '' })
+          : h('span', { class: 'profile-avatar blank', 'aria-hidden': 'true', text: [...(p.username || '?')][0].toUpperCase() }),
+        h('div', {}, h('h1', { text: p.username + (isMe ? ' (you)' : '') }), sub ? h('p', { class: 'lead', text: sub }) : null)),
+      actions),
+    h('div', { class: 'profile' },
+      h('div', { class: 'profile-card' }, cardEl),
+      h('div', { class: 'stack', style: 'gap:28px;min-width:0' },
+        h('div', { class: 'tiles' },
+          tile(stats.score.toLocaleString(), 'collection score'),
+          tile(String(stats.cards), stats.cards === 1 ? 'card held' : 'cards held'),
+          tile(String(stats.collected), stats.collected === 1 ? 'player collected' : 'players collected'),
+          tile(earned.length + '/' + badges.length, 'badges'),
+          tile(String(stats.tradedOut), 'times their card was traded out'),
+          tile(String(stats.wantedBy), stats.wantedBy === 1 ? 'player wants their card' : 'players want their card')),
+        h('section', { class: 'stack' }, h('h2', {}, 'Badges'),
+          earned.length ? h('div', { class: 'badge-chips' }, earned.map((b) => h('span', { class: 'badge-chip', title: b.desc }, h('span', { 'aria-hidden': 'true', text: b.icon }), b.name)))
+            : h('p', { class: 'muted', style: 'margin:0', text: 'No badges yet.' })),
+        h('section', { class: 'stack' }, h('h2', {}, 'Recent activity'),
+          events === null ? h('p', { class: 'muted', style: 'margin:0', text: 'Activity isn’t available yet.' })
+            : events.length ? activityList(events, null, { flat: true })
+              : h('p', { class: 'muted', style: 'margin:0', text: 'Nothing yet.' })))),
+    h('div', { class: 'stack', style: 'gap:34px;margin-top:40px' },
+      history,
+      h('section', { class: 'stack' }, h('h2', {}, isMe ? 'Your collection' : 'Their collection'),
+        held.length ? h('div', { class: 'cards' }, held.map((it) => {
+          const c = state.cardsById.get(it.card_id);
+          return h('div', { class: 'slot' }, cardThumb(c, itemData(it), it),
+            h('div', { class: 'meta' }, h('b', { text: editionLabel(it) }), ' · made by ', c.creator_id === id ? (isMe ? 'you' : 'them') : playerLink(c.creator_id)));
+        })) : h('p', { class: 'muted', style: 'margin:0', text: 'No cards yet.' }))));
+}
+
 // ---------------------------------------------------------------- trades
 
 async function renderTrades() {
@@ -740,8 +917,9 @@ async function renderTrades() {
       actions.append(
         h('button', { class: 'btn ok', type: 'button', onclick: async () => {
           const r = await attempt(() => api.respond(t.id, true));
-          toast(r === 'accepted' ? 'Trade done. Check your collection.' : 'That trade can’t go through anymore: one of the cards changed hands.', r !== 'accepted');
+          if (r !== 'accepted') toast('That trade can’t go through anymore: one of the cards changed hands.', true);
           renderTrades(); refreshBadge();
+          if (r === 'accepted') checkNewCards().catch(() => {});
         } }, 'Accept'),
         h('button', { class: 'btn', type: 'button', onclick: () => openTrade(state.playersById.get(t.from_user) || { id: t.from_user, username: playerName(t.from_user) }, { counter: t }) }, 'Counter'),
         h('button', { class: 'btn', type: 'button', onclick: async () => { await attempt(() => api.respond(t.id, false), 'Declined'); renderTrades(); refreshBadge(); } }, 'Decline'));
@@ -816,6 +994,7 @@ async function checkTrades() {
         notify(playerName(t.to_user) + (t.status === 'accepted' ? ' accepted your trade' : t.status === 'declined' ? ' declined your trade' : '’s trade couldn’t go through'));
       }
     });
+    if (mineOut.some((t) => seen.outgoing.get(t.id) === 'pending' && t.status === 'accepted')) checkNewCards().catch(() => {});
     const changed = fresh.length || mineOut.some((t) => seen.outgoing.get(t.id) !== t.status);
     if (changed && ['#trades', '#collection'].includes(location.hash)) route();
   }
@@ -835,6 +1014,121 @@ function startTradeWatch() {
   pollTimer = setInterval(() => { if (!document.hidden) checkTrades().catch(() => {}); }, 45000);
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkTrades().catch(() => {}); });
+
+// ---------------------------------------------------------------- card reveal
+
+// Cards that arrive from a trade are revealed the first time you see them. Which cards you've
+// already seen is remembered in this browser only; on a first visit everything counts as seen.
+const seenStore = new Map();
+const seenKey = () => 'player-cards-seen-' + state.me.id;
+function loadSeen() {
+  try { const raw = localStorage.getItem(seenKey()); if (raw) return new Set(JSON.parse(raw)); } catch { /* storage blocked */ }
+  return seenStore.get(state.me.id) || null;
+}
+function storeSeen(set) {
+  seenStore.set(state.me.id, set);
+  try { localStorage.setItem(seenKey(), JSON.stringify([...set])); } catch { /* keep in memory */ }
+}
+
+let revealBusy = false;
+async function checkNewCards() {
+  if (!state.me || revealBusy) return;
+  revealBusy = true;
+  try {
+    const items = await api.items(state.me.id);
+    const seenSet = loadSeen();
+    const all = new Set([...(seenSet || []), ...items.map((i) => i.id)]);
+    if (!seenSet) { storeSeen(all); return; }
+    let fresh = items.filter((i) => !seenSet.has(i.id) && !isLocked(i));
+    if (fresh.length) await refreshPlayers();
+    fresh = fresh.filter((i) => { const c = state.cardsById.get(i.card_id); return c && !(c.hidden && !canSeeHidden(c)); });
+    if (!fresh.length) { if (all.size !== seenSet.size) storeSeen(all); return; }
+    await loadVersions(fresh);
+    const trades = await api.trades().catch(() => []);
+    const giver = (it) => {
+      const t = trades.find((x) => x.status === 'accepted' && (x.to_user === state.me.id ? x.offer_items : x.request_items).includes(it.id));
+      if (t) return t.to_user === state.me.id ? t.from_user : t.to_user;
+      return state.cardsById.get(it.card_id).creator_id;
+    };
+    // Save the rarest for last.
+    const order = { mythic: 4, legendary: 3, epic: 2, rare: 1, common: 0 };
+    const rank = (it) => order[cleanCard(itemData(it)).rarity.toLowerCase()] || 0;
+    fresh.sort((a, b) => rank(a) - rank(b));
+    await showReveal(fresh.map((it) => ({ it, from: giver(it) })));
+    storeSeen(all);
+    if (location.hash === '#collection') route();
+  } finally {
+    revealBusy = false;
+  }
+}
+
+function showReveal(queue) {
+  return new Promise((done) => {
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const root = h('div', { class: 'reveal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'New card' });
+    const before = document.activeElement;
+    let i = 0;
+    let timer = null;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
+      if (e.key !== 'Tab') return;
+      const f = [...root.querySelectorAll('button, a[href], [tabindex="0"]')].filter((x) => x.offsetParent !== null && getComputedStyle(x).visibility !== 'hidden');
+      if (!f.length) return;
+      const at = f.indexOf(document.activeElement);
+      if (e.shiftKey && at <= 0) { e.preventDefault(); f.at(-1).focus(); } else if (!e.shiftKey && at === f.length - 1) { e.preventDefault(); f[0].focus(); }
+    };
+    const close = () => {
+      clearTimeout(timer);
+      root.remove();
+      document.removeEventListener('keydown', onKey, true);
+      if (before && before.isConnected && before.focus) before.focus();
+      done();
+    };
+    document.addEventListener('keydown', onKey, true);
+
+    const show = () => {
+      clearTimeout(timer);
+      const { it, from } = queue[i];
+      const data = cleanCard(itemData(it));
+      const last = i + 1 >= queue.length;
+      const sleeve = h('button', { class: 'reveal-sleeve', type: 'button', 'aria-label': 'Reveal the card' },
+        h('span', { class: 'rs-mark', 'aria-hidden': 'true', text: '✞' }),
+        h('span', { class: 'rs-logo', 'aria-hidden': 'true', text: 'Player Cards' }),
+        h('span', { class: 'rs-hint', 'aria-hidden': 'true', text: 'tap to reveal' }));
+      const sparks = data.rarity === 'Common' ? 12 : data.rarity === 'Rare' ? 20 : 32;
+      const burst = h('div', { class: 'reveal-burst', 'aria-hidden': 'true' }, Array.from({ length: sparks }, (_, k) => h('i', {
+        style: '--a:' + ((k * 360) / sparks + Math.random() * 10).toFixed(1) + 'deg;--d:' + Math.round(150 + Math.random() * 150) + 'px;--s:'
+          + (3 + Math.random() * 5).toFixed(1) + 'px;--t:' + (Math.random() * 0.3).toFixed(2) + 's',
+      })));
+      const next = h('button', { class: 'btn primary', type: 'button', onclick: () => { i += 1; if (last) close(); else show(); } }, last ? 'Done' : 'Next card');
+      const box = h('div', { class: 'reveal-box' },
+        h('p', { class: 'reveal-kicker', text: queue.length > 1 ? 'New card · ' + (i + 1) + ' of ' + queue.length : 'New card' }),
+        h('div', { class: 'reveal-stage' }, burst,
+          h('div', { class: 'reveal-flip' }, h('div', { class: 'reveal-card' }, renderCard(data, { item: it })), sleeve)),
+        h('div', { class: 'reveal-info', 'aria-live': 'polite' },
+          h('h2', { text: data.name }),
+          h('p', {}, h('b', { text: editionLabel(it) }), ' · ', h('span', { class: 'reveal-rarity', text: data.rarity }),
+            from && from !== state.me.id ? ' · from ' + playerName(from) : null),
+          h('p', { class: 'muted small', text: 'Tap the card to see its back.' })),
+        h('div', { class: 'row reveal-actions' }, next,
+          h('a', { class: 'btn ghost', href: '#collection', onclick: close }, 'See collection')));
+      root.dataset.rarity = data.rarity.toLowerCase();
+      root.classList.remove('open');
+      root.replaceChildren(h('div', { class: 'reveal-rays', 'aria-hidden': 'true' }), box);
+      const open = () => {
+        if (root.classList.contains('open')) return;
+        clearTimeout(timer);
+        root.classList.add('open');
+        setTimeout(() => { if (root.isConnected) next.focus(); }, reduce ? 0 : 750);
+      };
+      sleeve.addEventListener('click', open);
+      sleeve.focus();
+      timer = setTimeout(open, reduce ? 0 : 1600);
+    };
+    document.body.append(root);
+    show();
+  });
+}
 
 // ---------------------------------------------------------------- shared card page
 
@@ -878,7 +1172,8 @@ async function renderView({ cardId, version }) {
   view.replaceChildren(
     h('div', { class: 'head-row' }, h('div', {},
       h('h1', { text: data.name + (v.version > 1 ? ' · v' + v.version : '') }),
-      h('p', { class: 'lead', text: data.className ? data.rarity + ' ' + data.className : data.rarity }))),
+      h('p', { class: 'lead' }, data.className ? data.rarity + ' ' + data.className : data.rarity,
+        state.me && state.playersById.has(card.creator_id) ? [' · made by ', playerLink(card.creator_id)] : null))),
     h('div', { class: 'share' }, renderCard(data, { item: { edition: 'original', serial: 1, version: v.version } }), actions));
 }
 
@@ -962,14 +1257,15 @@ async function renderAdmin() {
 
 // ---------------------------------------------------------------- routing
 
-const routes = { card: renderMyCard, collection: renderCollection, players: renderPlayers, trades: renderTrades, leaderboard: renderLeaderboard, admin: renderAdmin };
+const routes = { card: renderMyCard, collection: renderCollection, players: renderPlayers, activity: renderActivity, trades: renderTrades, leaderboard: renderLeaderboard, admin: renderAdmin };
 
 async function route() {
   const shared = parseViewHash();
   if (!state.me && !shared) { renderSignIn(); return; }
   const tab = (location.hash || '#card').slice(1);
-  const fn = shared ? () => renderView(shared) : routes[tab] || renderMyCard;
-  if (!shared) document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === (routes[tab] ? tab : 'card')));
+  const profile = /^player-([0-9a-f-]{36})$/i.exec(tab);
+  const fn = shared ? () => renderView(shared) : profile ? () => renderProfile(profile[1]) : routes[tab] || renderMyCard;
+  if (!shared && !profile) document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === (routes[tab] ? tab : 'card')));
   view.replaceChildren(h('p', { class: 'muted', text: 'Loading…' }));
   try { await fn(); } catch (e) { view.replaceChildren(h('div', { class: 'empty' }, h('h3', {}, 'Something went wrong'), h('p', { text: e.message || String(e) }))); }
 }
@@ -984,7 +1280,8 @@ async function boot() {
   }
   await renderHeader();
   if (state.me) startTradeWatch();
-  route();
+  await route();
+  if (state.me) checkNewCards().catch(() => {});
 }
 
 api.onChange(async () => {
@@ -993,7 +1290,8 @@ api.onChange(async () => {
   state.versionsById = new Map();
   if (state.me) { await refreshPlayers(); startTradeWatch(); }
   await renderHeader();
-  route();
+  await route();
+  if (state.me) checkNewCards().catch(() => {});
 });
 window.addEventListener('hashchange', route);
 boot();
